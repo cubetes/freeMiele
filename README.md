@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/logo/freemiele-mark-dark.svg">
+  <img src="assets/logo/freemiele-mark.svg" alt="freeMiele logo: a teal tile with a copper dial" width="96">
+</picture>
+
 # freeMiele
 
 Control Miele appliances from your Mac's terminal: see their status, turn them on and off,
@@ -42,6 +47,12 @@ its replies (after `login`, using the token from Miele's API test page):
 
 These real files are git-ignored because they contain serial numbers. To share one,
 copy it to `*.sample.json` and replace the serial number with zeros.
+
+## Logo
+
+In `assets/logo/`: `freemiele-mark.svg` (light), `freemiele-mark-dark.svg` (dark),
+`freemiele-mark-small.svg` (for 16–32 px, e.g. favicons) and `freemiele-icon-512.png`.
+Teal and copper only; never Miele's red or logo.
 
 ## Develop
 
