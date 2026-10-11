@@ -233,8 +233,10 @@ fn coffee_phase_name(code: i64) -> Option<&'static str> {
     })
 }
 
+type NameOf = fn(i64) -> Option<&'static str>;
+
 /// The API's own text if it has one, else our name for the code.
-fn reading_text(r: &Reading, ours: fn(i64) -> Option<&'static str>) -> Option<String> {
+fn reading_text(r: &Reading, ours: NameOf) -> Option<String> {
     match r.value_localized.as_deref() {
         Some(t) if !t.is_empty() => Some(t.to_string()),
         _ => ours(r.value_raw?).map(String::from),
@@ -242,21 +244,31 @@ fn reading_text(r: &Reading, ours: fn(i64) -> Option<&'static str>) -> Option<St
 }
 
 /// One line per device, e.g. "CM6160 Coffee Machine: Off (mobile start off) — needs attention".
-/// A coffee machine at work adds its program and phase: "In use, coffee · Grinding".
+/// An appliance at work adds its program and phase: "In use, coffee · Grinding".
+/// A washer or dryer that has finished says "Finished, Sportswear", with no phase or time left.
 pub fn status_line(d: &Device) -> String {
     let mut line = format!("{}: {}", name(d), d.state.status.value_localized);
+    let status = d.state.status.value_raw;
+    // Coffee machines need our names; washers and dryers send their own text.
+    let names: Option<(NameOf, NameOf)> = match d.ident.kind.value_raw {
+        COFFEE_MACHINE => Some((coffee_program_name, coffee_phase_name)),
+        WASHING_MACHINE | TUMBLE_DRYER | WASHER_DRYER => Some((|_| None, |_| None)),
+        _ => None,
+    };
     // 0 = Off, 255 = Not connected
-    if d.ident.kind.value_raw == COFFEE_MACHINE
-        && ![0, 255].contains(&d.state.status.value_raw)
-        && let Some(program) = reading_text(&d.state.program_id, coffee_program_name)
+    if let Some((program_name, phase_name)) = names
+        && ![0, 255].contains(&status)
+        && let Some(program) = reading_text(&d.state.program_id, program_name)
     {
         line += &format!(", {program}");
-        if let Some(phase) = reading_text(&d.state.program_phase, coffee_phase_name) {
+        if status != END
+            && let Some(phase) = reading_text(&d.state.program_phase, phase_name)
+        {
             line += &format!(" · {phase}");
         }
     }
     let [h, m] = d.state.remaining_time;
-    if h + m > 0 {
+    if h + m > 0 && status != END {
         line += &format!(", {h}h{m:02} left");
     }
     let remote = &d.state.remote_enable;
@@ -283,6 +295,11 @@ pub struct FillingLevels {
 
 /// `Ident.kind.value_raw` of a coffee machine.
 pub const COFFEE_MACHINE: i64 = 17;
+const WASHING_MACHINE: i64 = 1;
+const TUMBLE_DRYER: i64 = 2;
+const WASHER_DRYER: i64 = 24;
+/// `State.status.value_raw` of a finished program.
+const END: i64 = 7;
 
 /// e.g. "  Care so far: descaled 20× · degreased 13× · milk system cleaned 12×"; None if none is set.
 pub fn care_line(f: &FillingLevels) -> Option<String> {
@@ -491,6 +508,27 @@ mod tests {
         assert!(set(d, 5, 24000, "", 4377).starts_with("CM6160 Coffee Machine: In use (mobile"));
         // Off stays as it was.
         assert!(set(d, 0, 24753, "", 4352).starts_with("CM6160 Coffee Machine: Off (mobile"));
+    }
+
+    #[test]
+    fn shows_washer_dryer_program_phase_and_time() {
+        let mut devices: Devices = serde_json::from_str(include_str!(
+            "../fixtures/devices.washer-running.sample.json"
+        ))
+        .unwrap();
+        let d = devices.get_mut("000000000024").unwrap();
+        assert_eq!(
+            status_line(d),
+            "WTR860 Washer dryer: In use, Sportswear · Main wash, 0h23 left (mobile start off)"
+        );
+        d.state.status = Value {
+            value_raw: 7,
+            value_localized: "Finished".into(),
+        };
+        assert_eq!(
+            status_line(d),
+            "WTR860 Washer dryer: Finished, Sportswear (mobile start off)"
+        );
     }
 
     #[test]
