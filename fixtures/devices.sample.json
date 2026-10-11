@@ -1,0 +1,36 @@
+{
+  "000123456789": {
+    "ident": {
+      "type": {
+        "value_raw": 17,
+        "value_localized": "Coffee Machine"
+      },
+      "deviceName": "",
+      "deviceIdentLabel": {
+        "fabNumber": "000123456789",
+        "techType": "CM6160"
+      }
+    },
+    "state": {
+      "status": {
+        "value_raw": 1,
+        "value_localized": "Off"
+      },
+      "ProgramID": {
+        "value_raw": 0,
+        "value_localized": ""
+      },
+      "remainingTime": [
+        0,
+        0
+      ],
+      "signalInfo": true,
+      "signalFailure": false,
+      "remoteEnable": {
+        "fullRemoteControl": true,
+        "smartGrid": false,
+        "mobileStart": false
+      }
+    }
+  }
+}

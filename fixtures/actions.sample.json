@@ -1,0 +1,17 @@
+{
+  "processAction": [],
+  "light": [
+    1
+  ],
+  "ambientLight": [],
+  "startTime": [],
+  "ventilationStep": [],
+  "programId": [],
+  "targetTemperature": [],
+  "deviceName": true,
+  "powerOn": true,
+  "powerOff": false,
+  "colors": [],
+  "modes": [],
+  "runOnTime": []
+}

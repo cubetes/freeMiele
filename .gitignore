@@ -1,0 +1,4 @@
+/target
+# Real API replies contain appliance serial numbers; only *.sample.json is shared.
+fixtures/*.json
+!fixtures/*.sample.json
