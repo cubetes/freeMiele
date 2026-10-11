@@ -45,7 +45,9 @@ fn run(cmd: Cmd) -> Result<()> {
             if devices.is_empty() {
                 println!("No appliances on this Miele account.");
             }
-            devices.values().for_each(|d| println!("{}", freemiele::status_line(d)));
+            devices
+                .values()
+                .for_each(|d| println!("{}", freemiele::status_line(d)));
             Ok(())
         }
         Cmd::On => power(true),
@@ -66,12 +68,20 @@ fn power(on: bool) -> Result<()> {
         let actions: Actions = get(&token, &format!("/devices/{id}/actions"))?;
         if (on && actions.power_on) || (!on && actions.power_off) {
             let key = if on { "powerOn" } else { "powerOff" };
-            put(&token, &format!("/devices/{id}/actions"), json!({ key: true }))?;
+            put(
+                &token,
+                &format!("/devices/{id}/actions"),
+                json!({ key: true }),
+            )?;
             println!("{}: turning {}.", name(d), if on { "on" } else { "off" });
             return Ok(());
         }
     }
-    Err(format!("No appliance can be turned {} right now (already {0}, or offline).", if on { "on" } else { "off" }).into())
+    Err(format!(
+        "No appliance can be turned {} right now (already {0}, or offline).",
+        if on { "on" } else { "off" }
+    )
+    .into())
 }
 
 fn brew(drink: &str) -> Result<()> {
@@ -83,7 +93,11 @@ fn brew(drink: &str) -> Result<()> {
             continue;
         }
         let Some(p) = freemiele::find_program(&programs, drink) else {
-            let names: Vec<_> = programs.iter().map(|p| p.program.as_str()).filter(|n| !n.is_empty()).collect();
+            let names: Vec<_> = programs
+                .iter()
+                .map(|p| p.program.as_str())
+                .filter(|n| !n.is_empty())
+                .collect();
             if !drink.is_empty() {
                 println!("No drink called \"{drink}\".");
             }
@@ -98,7 +112,11 @@ fn brew(drink: &str) -> Result<()> {
             )
             .into());
         }
-        put(&token, &format!("/devices/{id}/programs"), json!({ "programId": p.program_id }))?;
+        put(
+            &token,
+            &format!("/devices/{id}/programs"),
+            json!({ "programId": p.program_id }),
+        )?;
         println!("{}: making {}.", name(d), p.program);
         return Ok(());
     }
@@ -117,7 +135,9 @@ fn login(legacy: bool) -> Result<()> {
     let listener = TcpListener::bind("127.0.0.1:8765")?;
     let url = freemiele::login_url(client_id.trim(), legacy, &state);
     println!("Log in to Miele in your browser. If it doesn't open, visit:\n{url}");
-    std::process::Command::new("open").arg(url.as_str()).status()?;
+    std::process::Command::new("open")
+        .arg(url.as_str())
+        .status()?;
 
     // Wait for the browser to come back with the login code; ignore stray requests (favicon etc).
     let code = loop {
@@ -129,9 +149,20 @@ fn login(legacy: bool) -> Result<()> {
             continue;
         }
         let code = freemiele::code_from_request(&line, &state);
-        let msg = if code.is_some() { "Logged in. You can close this tab." } else { "Login failed. Check the terminal." };
-        write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{msg}", msg.len())?;
-        break code.ok_or(format!("Miele did not return a login code. Browser said: {}", line.trim()))?;
+        let msg = if code.is_some() {
+            "Logged in. You can close this tab."
+        } else {
+            "Login failed. Check the terminal."
+        };
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{msg}",
+            msg.len()
+        )?;
+        break code.ok_or(format!(
+            "Miele did not return a login code. Browser said: {}",
+            line.trim()
+        ))?;
     };
 
     Session::login(client_id.trim().to_string(), client_secret, legacy, &code)?.save()?;

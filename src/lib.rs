@@ -103,13 +103,18 @@ pub fn put(token: &str, path: &str, body: serde_json::Value) -> Result<()> {
 /// Never matches an empty name: the API lists a nameless program that must not start by accident.
 pub fn find_program<'a>(programs: &'a [Program], name: &str) -> Option<&'a Program> {
     let name = name.trim().to_lowercase();
-    programs.iter().find(|p| !name.is_empty() && p.program.to_lowercase() == name)
+    programs
+        .iter()
+        .find(|p| !name.is_empty() && p.program.to_lowercase() == name)
 }
 
 /// The user's name for the device, or model + type, e.g. "CM6160 Coffee machine".
 pub fn name(d: &Device) -> String {
     match d.ident.device_name.as_str() {
-        "" => format!("{} {}", d.ident.device_ident_label.tech_type, d.ident.kind.value_localized),
+        "" => format!(
+            "{} {}",
+            d.ident.device_ident_label.tech_type, d.ident.kind.value_localized
+        ),
         n => n.to_string(),
     }
 }
@@ -152,7 +157,10 @@ struct TokenReply {
 }
 
 fn now() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }
 
 fn keychain() -> Result<keyring::Entry> {
@@ -187,7 +195,12 @@ pub fn code_from_request(line: &str, state: &str) -> Option<String> {
 
 impl Session {
     /// Trade the code from the browser login for tokens.
-    pub fn login(client_id: String, client_secret: String, legacy: bool, code: &str) -> Result<Self> {
+    pub fn login(
+        client_id: String,
+        client_secret: String,
+        legacy: bool,
+        code: &str,
+    ) -> Result<Self> {
         let mut s = Session {
             client_id,
             client_secret,
@@ -205,9 +218,16 @@ impl Session {
     }
 
     fn token_request(&mut self, form: &[(&str, &str)]) -> Result<()> {
-        let url = if self.legacy { format!("{LEGACY_AUTH}/token") } else { format!("{AUTH}/token") };
+        let url = if self.legacy {
+            format!("{LEGACY_AUTH}/token")
+        } else {
+            format!("{AUTH}/token")
+        };
         let mut form = form.to_vec();
-        form.extend([("client_id", self.client_id.as_str()), ("client_secret", self.client_secret.as_str())]);
+        form.extend([
+            ("client_id", self.client_id.as_str()),
+            ("client_secret", self.client_secret.as_str()),
+        ]);
         let reply: TokenReply = reqwest::blocking::Client::new()
             .post(url)
             .form(&form)
@@ -265,8 +285,14 @@ mod tests {
     fn finds_program_ignoring_case() {
         let programs: Vec<Program> =
             serde_json::from_str(include_str!("../fixtures/programs.sample.json")).unwrap();
-        assert_eq!(find_program(&programs, "flat white").unwrap().program_id, 24012);
-        assert_eq!(find_program(&programs, "CAFFÈ LATTE").unwrap().program_id, 24009);
+        assert_eq!(
+            find_program(&programs, "flat white").unwrap().program_id,
+            24012
+        );
+        assert_eq!(
+            find_program(&programs, "CAFFÈ LATTE").unwrap().program_id,
+            24009
+        );
         assert!(find_program(&programs, "mocha").is_none());
         assert!(find_program(&programs, "").is_none());
 
@@ -281,6 +307,9 @@ mod tests {
         assert_eq!(code_from_request(line, "abc").as_deref(), Some("x/y"));
         assert_eq!(code_from_request(line, "other"), None);
         assert_eq!(code_from_request("GET /favicon.ico HTTP/1.1", "abc"), None);
-        assert_eq!(code_from_request("GET /?state=abc&error=access_denied HTTP/1.1", "abc"), None);
+        assert_eq!(
+            code_from_request("GET /?state=abc&error=access_denied HTTP/1.1", "abc"),
+            None
+        );
     }
 }
