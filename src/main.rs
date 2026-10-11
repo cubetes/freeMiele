@@ -6,7 +6,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 
 #[derive(Parser)]
-#[command(about = "Control Miele appliances from the terminal")]
+#[command(name = "miele", about = "Control Miele appliances from the terminal")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -162,6 +162,6 @@ fn login() -> Result<()> {
     };
 
     Session::login(client_id.trim().to_string(), client_secret, &code)?.save()?;
-    println!("Logged in. Try `cargo run -- status`.");
+    println!("Logged in. Try `miele status`.");
     Ok(())
 }
