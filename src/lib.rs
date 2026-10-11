@@ -52,6 +52,7 @@ pub struct RemoteEnable {
 
 #[derive(Deserialize)]
 pub struct Value {
+    pub value_raw: i64,
     pub value_localized: String,
 }
 
@@ -134,6 +135,32 @@ pub fn status_line(d: &Device) -> String {
         line += " — needs attention (water, beans, tray or care)";
     }
     line
+}
+
+/// Coffee machine care counters, from `GET /devices/{id}/fillingLevels` (null = not supported).
+/// Unit unconfirmed, so the wording lives in `care_line` only.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FillingLevels {
+    pub descaling_counter: Option<i64>,
+    pub degreasing_counter: Option<i64>,
+    pub milk_cleaning_counter: Option<i64>,
+}
+
+/// `Ident.kind.value_raw` of a coffee machine.
+pub const COFFEE_MACHINE: i64 = 17;
+
+/// e.g. "  Care counters: descaling 20 · degreasing 13 · milk cleaning 12"; None if none is set.
+pub fn care_line(f: &FillingLevels) -> Option<String> {
+    let parts: Vec<_> = [
+        ("descaling", f.descaling_counter),
+        ("degreasing", f.degreasing_counter),
+        ("milk cleaning", f.milk_cleaning_counter),
+    ]
+    .into_iter()
+    .filter_map(|(label, n)| n.map(|n| format!("{label} {n}")))
+    .collect();
+    (!parts.is_empty()).then(|| format!("  Care counters: {}", parts.join(" · ")))
 }
 
 /// Login details, kept as one entry in the macOS Keychain.
@@ -292,6 +319,22 @@ mod tests {
             status_line(d),
             "CM6160 Coffee Machine: Off (mobile start off) — needs attention (water, beans, tray or care)"
         );
+    }
+
+    #[test]
+    fn shows_care_counters_from_sample() {
+        let f: FillingLevels =
+            serde_json::from_str(include_str!("../fixtures/fillingLevels.sample.json")).unwrap();
+        assert_eq!(
+            care_line(&f).unwrap(),
+            "  Care counters: descaling 20 · degreasing 13 · milk cleaning 12"
+        );
+        let none = FillingLevels {
+            descaling_counter: None,
+            degreasing_counter: None,
+            milk_cleaning_counter: None,
+        };
+        assert_eq!(care_line(&none), None);
     }
 
     #[test]

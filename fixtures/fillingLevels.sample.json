@@ -1,0 +1,12 @@
+{
+  "twinDosContainer1FillingLevel": null,
+  "twinDosContainer2FillingLevel": null,
+  "powerDiscFillingLevel": null,
+  "saltFillingLevel": null,
+  "rinseAidFillingLevel": null,
+  "coalFilterSaturation": null,
+  "fatFilterSaturation": null,
+  "descalingCounter": 20,
+  "degreasingCounter": 13,
+  "milkCleaningCounter": 12
+}
