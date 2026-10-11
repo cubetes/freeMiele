@@ -321,6 +321,7 @@ dependencies = [
  "clap",
  "freemiele",
  "rpassword",
+ "serde",
  "serde_json",
 ]
 

@@ -1,0 +1,24 @@
+[
+  {
+    "id": "000000000000",
+    "ident": {
+      "applianceType": "WASHING_MACHINE",
+      "localizedType": "Washing machine",
+      "applianceName": "WWB000 Washer",
+      "serialNo": "000000000000",
+      "materialNo": "00000000",
+      "techType": "WWB000"
+    }
+  },
+  {
+    "id": "000000000001",
+    "ident": {
+      "applianceType": "TUMBLE_DRYER",
+      "localizedType": "Tumble dryer",
+      "applianceName": "",
+      "serialNo": "000000000001",
+      "materialNo": "00000000",
+      "techType": "TWB000"
+    }
+  }
+]

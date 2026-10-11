@@ -1,0 +1,31 @@
+[
+  {
+    "operationId": 1,
+    "operationName": "Sportswear",
+    "isEcoOperation": false,
+    "startAt": "2026-10-11T20:08:00Z",
+    "endAt": "2026-10-11T21:20:00Z",
+    "durationSeconds": 4320,
+    "finalPhase": "Finished",
+    "consumptionStatistics": [
+      { "id": 127, "name": "Water consumption", "dataFormat": "MILLILITER_AS_LITER", "value": 48000 },
+      { "id": 126, "name": "Energy consumption", "dataFormat": "WATTHOURS_AS_KILOWATTHOURS", "value": 900 }
+    ]
+  },
+  {
+    "operationId": 2,
+    "operationName": "Cottons",
+    "isEcoOperation": true,
+    "startAt": "2026-10-09T07:30:00Z",
+    "endAt": "2026-10-09T09:05:00Z",
+    "durationSeconds": 5700,
+    "consumptionStatistics": [
+      { "id": 126, "name": "Energy consumption", "dataFormat": "WATTHOURS_AS_KILOWATTHOURS", "value": 1250 }
+    ]
+  },
+  {
+    "operationName": "Quick wash",
+    "startAt": "2026-10-07T18:00:00Z",
+    "consumptionStatistics": null
+  }
+]
