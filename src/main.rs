@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use freemiele::{
-    Actions, CARE_SCHEDULE, COFFEE_MACHINE, Devices, FillingLevels, Program, Result, Session,
-    care_line, choose, get, name, put,
+    Actions, CARE_SCHEDULE, COFFEE_MACHINE, Devices, FillingLevels, NOT_LOGGED_IN, Program, Result,
+    Session, care_line, choose, get, name, put,
 };
 use serde_json::json;
 use std::hash::{BuildHasher, RandomState};
@@ -177,10 +177,16 @@ fn brew(device: Option<&str>, drink: &str) -> Result<()> {
 }
 
 fn logout() -> Result<()> {
-    let Ok(session) = Session::load() else {
-        Session::forget()?; // also clears an entry too damaged to read
-        println!("Not logged in.");
-        return Ok(());
+    let session = match Session::load() {
+        Ok(s) => s,
+        // No entry, or one too damaged to read: clear it. A refused Keychain access is reported.
+        // lean: "no entry" is matched by message text; use an error enum if load gets more cases.
+        Err(e) if e.is::<serde_json::Error>() || e.to_string() == NOT_LOGGED_IN => {
+            Session::forget()?;
+            println!("Not logged in.");
+            return Ok(());
+        }
+        Err(e) => return Err(e),
     };
     let at_miele = session.end_at_miele();
     Session::forget()?; // delete locally even if Miele failed

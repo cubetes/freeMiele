@@ -333,6 +333,18 @@ fn keychain() -> Result<keyring::Entry> {
     Ok(keyring::Entry::new("miele-cli", "session")?)
 }
 
+pub const NOT_LOGGED_IN: &str = "Not logged in. Run `miele login` first.";
+
+/// Tell "no saved login" apart from "macOS refused access to it".
+fn login_error(e: keyring::Error) -> String {
+    match e {
+        keyring::Error::NoEntry => NOT_LOGGED_IN.into(),
+        e => format!(
+            "macOS didn't allow access to the saved login. Run the command again and click Always Allow. ({e})"
+        ),
+    }
+}
+
 pub fn login_url(client_id: &str, state: &str) -> Url {
     let params = vec![
         ("client_id", client_id),
@@ -397,9 +409,7 @@ impl Session {
     }
 
     pub fn load() -> Result<Self> {
-        let json = keychain()?
-            .get_password()
-            .map_err(|_| "Not logged in. Run `miele login` first.")?;
+        let json = keychain()?.get_password().map_err(login_error)?;
         Ok(serde_json::from_str(&json)?)
     }
 
@@ -444,6 +454,14 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keychain_errors_say_what_went_wrong() {
+        assert_eq!(login_error(keyring::Error::NoEntry), NOT_LOGGED_IN);
+        let refused = login_error(keyring::Error::NoStorageAccess("denied".into()));
+        assert!(refused.starts_with("macOS didn't allow access"));
+        assert!(refused.contains("denied"));
+    }
 
     #[test]
     fn old_session_with_legacy_field_still_loads() {
