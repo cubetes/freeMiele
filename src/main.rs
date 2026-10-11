@@ -1,5 +1,8 @@
 use clap::{Parser, Subcommand};
-use freemiele::{Actions, Devices, Program, Result, Session, choose, get, name, put};
+use freemiele::{
+    Actions, CARE_SCHEDULE, COFFEE_MACHINE, Devices, FillingLevels, Program, Result, Session,
+    care_line, choose, get, name, put,
+};
 use serde_json::json;
 use std::hash::{BuildHasher, RandomState};
 use std::io::{BufRead, BufReader, Write};
@@ -20,6 +23,8 @@ enum Cmd {
     Logout,
     /// Show the state of every appliance on your Miele account
     Status,
+    /// How often your coffee machine has been cleaned, and the care schedule
+    Care,
     /// Turn on the appliance that can be turned on (e.g. the coffee machine)
     On {
         /// Which appliance, by name or model (e.g. CM6160); needed if several qualify
@@ -57,12 +62,12 @@ fn run(cmd: Cmd) -> Result<()> {
             if devices.is_empty() {
                 println!("No appliances on this Miele account.");
             }
-            // Care counters (`care_line`) stay hidden until we know what they mean: see #5.
             devices
                 .values()
                 .for_each(|d| println!("{}", freemiele::status_line(d)));
             Ok(())
         }
+        Cmd::Care => care(),
         Cmd::On { device } => power(true, device.as_deref()),
         Cmd::Off { device } => power(false, device.as_deref()),
         Cmd::Brew { device, drink } => brew(device.as_deref(), &drink.join(" ")),
@@ -71,6 +76,30 @@ fn run(cmd: Cmd) -> Result<()> {
 
 fn token() -> Result<String> {
     Session::load()?.access_token()
+}
+
+fn care() -> Result<()> {
+    let token = token()?;
+    let devices: Devices = get(&token, "/devices")?;
+    let mut found = false;
+    for (id, d) in devices
+        .iter()
+        .filter(|(_, d)| d.ident.kind.value_raw == COFFEE_MACHINE)
+    {
+        found = true;
+        println!("{}", name(d));
+        let levels: Result<FillingLevels> = get(&token, &format!("/devices/{id}/fillingLevels"));
+        let line = levels.ok().as_ref().and_then(care_line);
+        println!(
+            "{}",
+            line.unwrap_or_else(|| "  Care so far: not available".into())
+        );
+        println!("{CARE_SCHEDULE}");
+    }
+    if !found {
+        println!("No coffee machine on this Miele account.");
+    }
+    Ok(())
 }
 
 fn power(on: bool, device: Option<&str>) -> Result<()> {

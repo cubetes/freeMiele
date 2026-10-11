@@ -42,6 +42,7 @@ miele off
 miele brew             # lists the drinks your machine offers
 miele brew flat white
 miele brew --device CM6160 espresso   # pick the appliance by name or model if you have several
+miele care             # how often your coffee machine has been cleaned, and the care schedule
 miele logout           # ends the login at Miele and deletes it from this computer
 ```
 

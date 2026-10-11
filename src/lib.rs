@@ -186,8 +186,7 @@ pub fn status_line(d: &Device) -> String {
 }
 
 /// Coffee machine care counters, from `GET /devices/{id}/fillingLevels` (null = not supported).
-/// Unit unconfirmed, so the wording lives in `care_line` only.
-// lean: not shown in `status` because the values don't match the machine's display; wire it back in once #5 explains them.
+/// Each is a lifetime count of completed care programmes (confirmed on a CM 6160; milk by analogy).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FillingLevels {
@@ -199,18 +198,26 @@ pub struct FillingLevels {
 /// `Ident.kind.value_raw` of a coffee machine.
 pub const COFFEE_MACHINE: i64 = 17;
 
-/// e.g. "  Care counters: descaling 20 · degreasing 13 · milk cleaning 12"; None if none is set.
+/// e.g. "  Care so far: descaled 20× · degreased 13× · milk system cleaned 12×"; None if none is set.
 pub fn care_line(f: &FillingLevels) -> Option<String> {
     let parts: Vec<_> = [
-        ("descaling", f.descaling_counter),
-        ("degreasing", f.degreasing_counter),
-        ("milk cleaning", f.milk_cleaning_counter),
+        ("descaled", f.descaling_counter),
+        ("degreased", f.degreasing_counter),
+        ("milk system cleaned", f.milk_cleaning_counter),
     ]
     .into_iter()
-    .filter_map(|(label, n)| n.map(|n| format!("{label} {n}")))
+    .filter_map(|(label, n)| n.map(|n| format!("{label} {n}×")))
     .collect();
-    (!parts.is_empty()).then(|| format!("  Care counters: {}", parts.join(" · ")))
+    (!parts.is_empty()).then(|| format!("  Care so far: {}", parts.join(" · ")))
 }
+
+/// Our own short summary of the owner's manual care table, printed under each coffee machine.
+pub const CARE_SCHEDULE: &str =
+    "  When the machine asks: descale; degrease the brew unit (1 cleaning tablet)
+  Every day: empty the drip tray and waste container, clean the milk flask and siphon
+  Every week: rinse the brew unit under running water, clean the central spout
+  Every month: clean the bean container and the water container filter
+  Due-now reminders only appear on the machine's display.";
 
 /// Login details, kept as one entry in the macOS Keychain.
 #[derive(Serialize, Deserialize)]
@@ -376,7 +383,7 @@ mod tests {
             serde_json::from_str(include_str!("../fixtures/fillingLevels.sample.json")).unwrap();
         assert_eq!(
             care_line(&f).unwrap(),
-            "  Care counters: descaling 20 · degreasing 13 · milk cleaning 12"
+            "  Care so far: descaled 20× · degreased 13× · milk system cleaned 12×"
         );
         let none = FillingLevels {
             descaling_counter: None,
