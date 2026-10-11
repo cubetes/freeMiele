@@ -16,6 +16,8 @@ struct Cli {
 enum Cmd {
     /// Log in to your Miele account (once); the login is kept in the macOS Keychain
     Login,
+    /// Log out: end the login at Miele and delete it from the Keychain
+    Logout,
     /// Show the state of every appliance on your Miele account
     Status,
     /// Turn on the appliance that can be turned on (e.g. the coffee machine)
@@ -36,6 +38,7 @@ fn main() {
 fn run(cmd: Cmd) -> Result<()> {
     match cmd {
         Cmd::Login => login(),
+        Cmd::Logout => logout(),
         Cmd::Status => {
             let devices: Devices = get(&token()?, "/devices")?;
             if devices.is_empty() {
@@ -117,6 +120,23 @@ fn brew(drink: &str) -> Result<()> {
         return Ok(());
     }
     Err("No appliance can make drinks right now (is it on and online?).".into())
+}
+
+fn logout() -> Result<()> {
+    let Ok(session) = Session::load() else {
+        println!("Not logged in.");
+        return Ok(());
+    };
+    let at_miele = session.end_at_miele();
+    Session::forget()?; // delete locally even if Miele failed
+    if let Err(e) = at_miele {
+        return Err(format!(
+            "Deleted the local login, but Miele did not confirm the logout ({e})."
+        )
+        .into());
+    }
+    println!("Logged out.");
+    Ok(())
 }
 
 fn login() -> Result<()> {
