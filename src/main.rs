@@ -124,6 +124,7 @@ fn brew(drink: &str) -> Result<()> {
 
 fn logout() -> Result<()> {
     let Ok(session) = Session::load() else {
+        Session::forget()?; // also clears an entry too damaged to read
         println!("Not logged in.");
         return Ok(());
     };
