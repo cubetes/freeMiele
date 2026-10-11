@@ -242,7 +242,7 @@ fn reading_text(r: &Reading, ours: fn(i64) -> Option<&'static str>) -> Option<St
 }
 
 /// One line per device, e.g. "CM6160 Coffee Machine: Off (mobile start off) — needs attention".
-/// A coffee machine at work adds its program and phase: "In use, coffee (Grinding)".
+/// A coffee machine at work adds its program and phase: "In use, coffee · Grinding".
 pub fn status_line(d: &Device) -> String {
     let mut line = format!("{}: {}", name(d), d.state.status.value_localized);
     // 0 = Off, 255 = Not connected
@@ -252,7 +252,7 @@ pub fn status_line(d: &Device) -> String {
     {
         line += &format!(", {program}");
         if let Some(phase) = reading_text(&d.state.program_phase, coffee_phase_name) {
-            line += &format!(" ({phase})");
+            line += &format!(" · {phase}");
         }
     }
     let [h, m] = d.state.remaining_time;
@@ -479,7 +479,7 @@ mod tests {
         assert!(!line.contains("(Not"));
         // A drink: the API's own name, plus our phase.
         let line = set(d, 5, 24000, "coffee", 4377);
-        assert!(line.starts_with("CM6160 Coffee Machine: In use, coffee (Grinding)"));
+        assert!(line.starts_with("CM6160 Coffee Machine: In use, coffee · Grinding"));
         // Unknown drink without a name: nothing added.
         assert!(set(d, 5, 24000, "", 4377).starts_with("CM6160 Coffee Machine: In use (mobile"));
         // Off stays as it was.
