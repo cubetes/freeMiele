@@ -47,6 +47,7 @@ Your login is kept in the macOS Keychain, so only the macOS builds can remember 
 ```sh
 miele login            # asks for client ID and secret, then opens the browser
 miele status
+miele watch            # live updates until you press Ctrl+C
 miele on               # turns on whichever appliance allows it
 miele off
 miele brew             # lists the drinks your machine offers
