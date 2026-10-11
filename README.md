@@ -41,6 +41,7 @@ miele on               # turns on whichever appliance allows it
 miele off
 miele brew             # lists the drinks your machine offers
 miele brew flat white
+miele logout           # ends the login at Miele and deletes it from this computer
 ```
 
 Put a cup under the spout before `brew`: the machine starts straight away.
