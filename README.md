@@ -10,6 +10,8 @@ and brew drinks. Built first for the CM 6160 coffee machine; washer-dryers are n
 
 Unofficial. Not made or endorsed by Miele. Uses Miele's public cloud API.
 
+See [supported appliances](docs/appliances.md) and the [roadmap](https://github.com/users/cubetes/projects/2).
+
 ## Before you start
 
 1. Pair your appliance in the Miele app, so it appears on your Miele account.
