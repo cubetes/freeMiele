@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use freemiele::{Actions, Devices, Program, Result, Session, get, name, put};
+use freemiele::{Actions, Devices, Program, Result, Session, choose, get, name, put};
 use serde_json::json;
 use std::hash::{BuildHasher, RandomState};
 use std::io::{BufRead, BufReader, Write};
@@ -21,11 +21,24 @@ enum Cmd {
     /// Show the state of every appliance on your Miele account
     Status,
     /// Turn on the appliance that can be turned on (e.g. the coffee machine)
-    On,
+    On {
+        /// Which appliance, by name or model (e.g. CM6160); needed if several qualify
+        #[arg(long)]
+        device: Option<String>,
+    },
     /// Turn off the appliance that can be turned off
-    Off,
+    Off {
+        /// Which appliance, by name or model (e.g. CM6160); needed if several qualify
+        #[arg(long)]
+        device: Option<String>,
+    },
     /// Make a drink, e.g. `miele brew flat white`. With no drink, list the choices.
-    Brew { drink: Vec<String> },
+    Brew {
+        /// Which appliance, by name or model (e.g. CM6160); needed if several qualify
+        #[arg(long)]
+        device: Option<String>,
+        drink: Vec<String>,
+    },
 }
 
 fn main() {
@@ -58,9 +71,9 @@ fn run(cmd: Cmd) -> Result<()> {
             }
             Ok(())
         }
-        Cmd::On => power(true),
-        Cmd::Off => power(false),
-        Cmd::Brew { drink } => brew(&drink.join(" ")),
+        Cmd::On { device } => power(true, device.as_deref()),
+        Cmd::Off { device } => power(false, device.as_deref()),
+        Cmd::Brew { device, drink } => brew(device.as_deref(), &drink.join(" ")),
     }
 }
 
@@ -68,67 +81,78 @@ fn token() -> Result<String> {
     Session::load()?.access_token()
 }
 
-// lean: acts on the first appliance that allows it; add `--device` if two ever qualify at once.
-fn power(on: bool) -> Result<()> {
+fn power(on: bool, device: Option<&str>) -> Result<()> {
     let token = token()?;
     let devices: Devices = get(&token, "/devices")?;
+    let mut candidates = Vec::new();
     for (id, d) in &devices {
         let actions: Actions = get(&token, &format!("/devices/{id}/actions"))?;
         if (on && actions.power_on) || (!on && actions.power_off) {
-            let key = if on { "powerOn" } else { "powerOff" };
-            put(
-                &token,
-                &format!("/devices/{id}/actions"),
-                json!({ key: true }),
-            )?;
-            println!("{}: turning {}.", name(d), if on { "on" } else { "off" });
-            return Ok(());
+            candidates.push((id.as_str(), d));
         }
     }
-    Err(format!(
-        "No appliance can be turned {} right now (already {0}, or offline).",
-        if on { "on" } else { "off" }
-    )
-    .into())
+    if candidates.is_empty() {
+        return Err(format!(
+            "No appliance can be turned {} right now (already {0}, or offline).",
+            if on { "on" } else { "off" }
+        )
+        .into());
+    }
+    let (id, d) = choose(&candidates, device)?;
+    let key = if on { "powerOn" } else { "powerOff" };
+    put(
+        &token,
+        &format!("/devices/{id}/actions"),
+        json!({ key: true }),
+    )?;
+    println!("{}: turning {}.", name(d), if on { "on" } else { "off" });
+    Ok(())
 }
 
-fn brew(drink: &str) -> Result<()> {
+fn brew(device: Option<&str>, drink: &str) -> Result<()> {
     let token = token()?;
     let devices: Devices = get(&token, "/devices")?;
+    let mut candidates = Vec::new();
+    let mut menus = std::collections::HashMap::new();
     for (id, d) in &devices {
         let programs: Vec<Program> = get(&token, &format!("/devices/{id}/programs"))?;
-        if programs.is_empty() {
-            continue;
+        if !programs.is_empty() {
+            candidates.push((id.as_str(), d));
+            menus.insert(id.as_str(), programs);
         }
-        let Some(p) = freemiele::find_program(&programs, drink) else {
-            let names: Vec<_> = programs
-                .iter()
-                .map(|p| p.program.as_str())
-                .filter(|n| !n.is_empty())
-                .collect();
-            if !drink.is_empty() {
-                println!("No drink called \"{drink}\".");
-            }
-            println!("{} can make: {}", name(d), names.join(", "));
-            return Ok(());
-        };
-        if !d.state.remote_enable.mobile_start {
-            return Err(format!(
-                "{} won't start drinks remotely yet: turn on Mobile Start at the machine, then run this again.\n\
-                 (It seems to switch off after each drink, as a safety step.)",
-                name(d)
-            )
-            .into());
-        }
-        put(
-            &token,
-            &format!("/devices/{id}/programs"),
-            json!({ "programId": p.program_id }),
-        )?;
-        println!("{}: making {}.", name(d), p.program);
-        return Ok(());
     }
-    Err("No appliance can make drinks right now (is it on and online?).".into())
+    if candidates.is_empty() {
+        return Err("No appliance can make drinks right now (is it on and online?).".into());
+    }
+    let (id, d) = choose(&candidates, device)?;
+    let programs = &menus[id];
+    let Some(p) = freemiele::find_program(programs, drink) else {
+        let names: Vec<_> = programs
+            .iter()
+            .map(|p| p.program.as_str())
+            .filter(|n| !n.is_empty())
+            .collect();
+        if !drink.is_empty() {
+            println!("No drink called \"{drink}\".");
+        }
+        println!("{} can make: {}", name(d), names.join(", "));
+        return Ok(());
+    };
+    if !d.state.remote_enable.mobile_start {
+        return Err(format!(
+            "{} won't start drinks remotely yet: turn on Mobile Start at the machine, then run this again.\n\
+             (It seems to switch off after each drink, as a safety step.)",
+            name(d)
+        )
+        .into());
+    }
+    put(
+        &token,
+        &format!("/devices/{id}/programs"),
+        json!({ "programId": p.program_id }),
+    )?;
+    println!("{}: making {}.", name(d), p.program);
+    Ok(())
 }
 
 fn logout() -> Result<()> {

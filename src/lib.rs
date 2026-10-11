@@ -118,6 +118,54 @@ pub fn name(d: &Device) -> String {
     }
 }
 
+/// Lower case, no spaces, so "cm 6160" matches "CM6160".
+fn squash(s: &str) -> String {
+    s.split_whitespace().collect::<String>().to_lowercase()
+}
+
+/// Pick the one device to act on from those that allow the action (id, device).
+/// With `wanted`, it must equal a device's name or model (ignoring case and spaces).
+/// Without it, there must be only one. Otherwise the error lists the choices.
+pub fn choose<'a>(
+    candidates: &[(&'a str, &'a Device)],
+    wanted: Option<&str>,
+) -> Result<(&'a str, &'a Device)> {
+    let list = |c: &[(&str, &Device)]| {
+        c.iter()
+            .map(|(_, d)| name(d))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let matches: Vec<_> = match wanted {
+        None => candidates.to_vec(),
+        Some(w) => {
+            let w = squash(w);
+            let hit = |(_, d): &&(&str, &Device)| {
+                squash(&name(d)) == w || squash(&d.ident.device_ident_label.tech_type) == w
+            };
+            candidates.iter().filter(hit).copied().collect()
+        }
+    };
+    match (&matches[..], wanted) {
+        ([one], _) => Ok(*one),
+        ([], _) => Err(format!(
+            "No matching appliance can do that right now. Available: {}.",
+            list(candidates)
+        )
+        .into()),
+        (many, Some(_)) => Err(format!(
+            "Several appliances match: {}. Be more specific.",
+            list(many)
+        )
+        .into()),
+        (many, None) => Err(format!(
+            "Several appliances can do that: {}. Choose one with --device.",
+            list(many)
+        )
+        .into()),
+    }
+}
+
 /// One line per device, e.g. "CM6160 Coffee Machine: Off (mobile start off) — needs attention".
 pub fn status_line(d: &Device) -> String {
     let mut line = format!("{}: {}", name(d), d.state.status.value_localized);
@@ -335,6 +383,32 @@ mod tests {
             milk_cleaning_counter: None,
         };
         assert_eq!(care_line(&none), None);
+    }
+
+    #[test]
+    fn chooses_device() {
+        let sample = || -> Device {
+            let mut m: Devices =
+                serde_json::from_str(include_str!("../fixtures/devices.sample.json")).unwrap();
+            m.remove("000123456789").unwrap()
+        };
+        let err = |c: &[(&str, &Device)], w| choose(c, w).err().unwrap().to_string();
+        let (a, mut b) = (sample(), sample());
+        b.ident.device_name = "Office".into();
+        let both = [("a", &a), ("b", &b)];
+        // Without --device, one candidate is fine; two are not.
+        assert_eq!(choose(&both[..1], None).unwrap().0, "a");
+        assert!(err(&both, None).contains("--device"));
+        // Match by model (ignoring case and spaces) or by name.
+        assert_eq!(choose(&both[1..], Some("cm 6160")).unwrap().0, "b");
+        assert_eq!(choose(&both, Some("office")).unwrap().0, "b");
+        // Both have the model; the message lists them.
+        let e = err(&both, Some("CM6160"));
+        assert!(e.contains("specific") && e.contains("Office"));
+        // No match lists the names; an empty --device matches nothing.
+        let e = err(&both, Some("washer"));
+        assert!(e.contains("Available") && e.contains("Office"));
+        assert!(choose(&both, Some("")).is_err());
     }
 
     #[test]

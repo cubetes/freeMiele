@@ -41,6 +41,7 @@ miele on               # turns on whichever appliance allows it
 miele off
 miele brew             # lists the drinks your machine offers
 miele brew flat white
+miele brew --device CM6160 espresso   # pick the appliance by name or model if you have several
 miele logout           # ends the login at Miele and deletes it from this computer
 ```
 
