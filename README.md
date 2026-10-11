@@ -1,6 +1,6 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/logo/freemiele-mark-dark.svg">
-  <img src="assets/logo/freemiele-mark.svg" alt="freeMiele logo: a teal tile with a copper dial" width="96">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/banner/freemiele-banner-dark.svg">
+  <img src="assets/banner/freemiele-banner.svg" alt="freeMiele: control your Miele appliances from your own computer. Example command: miele brew flat white.">
 </picture>
 
 # freeMiele
@@ -51,7 +51,9 @@ copy it to `*.sample.json` and replace the serial number with zeros.
 ## Logo
 
 In `assets/logo/`: `freemiele-mark.svg` (light), `freemiele-mark-dark.svg` (dark),
-`freemiele-mark-small.svg` (for 16–32 px, e.g. favicons) and `freemiele-icon-512.png`.
+`freemiele-mark-small.svg` (for 16–32 px, e.g. favicons), `freemiele-icon-512.png`, and the
+name lockup `freemiele-logo.svg` / `freemiele-logo-dark.svg` (the name is drawn as shapes, so
+no font is needed). Banners for this README and GitHub's social preview are in `assets/banner/`.
 Teal and copper only; never Miele's red or logo.
 
 ## Develop
