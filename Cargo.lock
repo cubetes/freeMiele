@@ -308,11 +308,19 @@ dependencies = [
 name = "freemiele"
 version = "0.2.0"
 dependencies = [
- "clap",
  "keyring",
  "reqwest",
- "rpassword",
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "freemiele-cli"
+version = "0.2.0"
+dependencies = [
+ "clap",
+ "freemiele",
+ "rpassword",
  "serde_json",
 ]
 

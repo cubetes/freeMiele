@@ -91,8 +91,8 @@ Teal and copper only; never Miele's red or logo.
 ## Develop
 
 ```sh
-cargo test
-cargo clippy
+cargo test --workspace
+cargo clippy --workspace
 ```
 
 Tests run against `fixtures/*.sample.json`, never the live API.

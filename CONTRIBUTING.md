@@ -17,7 +17,10 @@ by Miele.
 1. Install Rust (stable).
 2. Register your own client ID and secret at <https://developer.miele.com>. Every person needs
    their own; never share them. Self-registered keys are for personal, non-commercial use.
-3. `cargo run -- login`, then `cargo run -- status`.
+3. `cargo run -p freemiele-cli -- login`, then `cargo run -p freemiele-cli -- status`.
+
+The code is a Cargo workspace: `crates/core` (package `freemiele`) talks to Miele, and
+`crates/cli` (package `freemiele-cli`) is the `miele` command. Test fixtures live in `fixtures/`.
 
 ## Rules
 
