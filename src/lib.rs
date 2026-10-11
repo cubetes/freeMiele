@@ -139,6 +139,7 @@ pub fn status_line(d: &Device) -> String {
 
 /// Coffee machine care counters, from `GET /devices/{id}/fillingLevels` (null = not supported).
 /// Unit unconfirmed, so the wording lives in `care_line` only.
+// lean: not shown in `status` because the values don't match the machine's display; wire it back in once #5 explains them.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FillingLevels {

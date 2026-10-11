@@ -40,22 +40,14 @@ fn run(cmd: Cmd) -> Result<()> {
         Cmd::Login => login(),
         Cmd::Logout => logout(),
         Cmd::Status => {
-            let token = token()?;
-            let devices: Devices = get(&token, "/devices")?;
+            let devices: Devices = get(&token()?, "/devices")?;
             if devices.is_empty() {
                 println!("No appliances on this Miele account.");
             }
-            for (id, d) in &devices {
-                println!("{}", freemiele::status_line(d));
-                if d.ident.kind.value_raw == freemiele::COFFEE_MACHINE {
-                    // A failed extra lookup must not hide the status line.
-                    if let Ok(f) = get(&token, &format!("/devices/{id}/fillingLevels"))
-                        && let Some(line) = freemiele::care_line(&f)
-                    {
-                        println!("{line}");
-                    }
-                }
-            }
+            // Care counters (`care_line`) stay hidden until we know what they mean: see #5.
+            devices
+                .values()
+                .for_each(|d| println!("{}", freemiele::status_line(d)));
             Ok(())
         }
         Cmd::On => power(true),
