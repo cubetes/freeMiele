@@ -18,15 +18,30 @@ See [supported appliances](docs/appliances.md) and the [roadmap](https://github.
 2. Register at <https://developer.miele.com> to get your own **client ID** and
    **client secret**. Every user needs their own; never commit or share them.
 
+## Install
+
+Download the file for your computer from the [latest release](https://github.com/cubetes/freeMiele/releases/latest),
+unpack it, and put `miele` somewhere on your `PATH`. Or, with [Rust](https://rustup.rs) installed:
+
+```sh
+cargo install --git https://github.com/cubetes/freeMiele
+```
+
+On a Mac, a downloaded `miele` is blocked the first time because it isn't signed by Apple. Allow it once
+with `xattr -d com.apple.quarantine miele`.
+
+Your login is kept in the macOS Keychain, so only the macOS builds can remember it today.
+
 ## Use
 
 ```sh
-cargo run -- login            # asks for client ID and secret, then opens the browser
-cargo run -- status
-cargo run -- on               # turns on whichever appliance allows it
-cargo run -- off
-cargo run -- brew             # lists the drinks your machine offers
-cargo run -- brew flat white
+miele login            # asks for client ID and secret, then opens the browser
+miele status
+miele on               # turns on whichever appliance allows it
+miele off
+miele brew             # lists the drinks your machine offers
+miele brew flat white
+miele logout           # ends the login at Miele and deletes it from this computer
 ```
 
 Put a cup under the spout before `brew`: the machine starts straight away.
