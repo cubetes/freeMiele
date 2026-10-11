@@ -238,6 +238,28 @@ impl Session {
         Ok(keychain()?.set_password(&serde_json::to_string(self)?)?)
     }
 
+    /// Ask Miele to end the session and kill its tokens.
+    // Keycloak `/logout` with the refresh token: it ends the whole session. `/revoke` exists too.
+    pub fn end_at_miele(&self) -> Result<()> {
+        reqwest::blocking::Client::new()
+            .post(format!("{AUTH}/logout"))
+            .form(&[
+                ("client_id", self.client_id.as_str()),
+                ("client_secret", self.client_secret.as_str()),
+                ("refresh_token", self.refresh_token.as_str()),
+            ])
+            .send()?
+            .error_for_status()?;
+        Ok(())
+    }
+
+    pub fn forget() -> Result<()> {
+        match keychain()?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
     /// A valid access token, refreshed (and saved) if it has expired.
     pub fn access_token(&mut self) -> Result<String> {
         if now() >= self.expires_at {
