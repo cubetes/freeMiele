@@ -8,8 +8,6 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 const API: &str = "https://api.mcs3.miele.com/v1";
 const AUTH: &str = "https://auth.domestic.miele-iot.com/partner/realms/mcs/protocol/openid-connect";
-// Older Miele login, still needed in countries the new one doesn't cover yet.
-const LEGACY_AUTH: &str = "https://api.mcs3.miele.com/thirdparty";
 pub const REDIRECT: &str = "http://localhost:8765/";
 
 #[derive(Deserialize)]
@@ -143,7 +141,6 @@ pub fn status_line(d: &Device) -> String {
 pub struct Session {
     client_id: String,
     client_secret: String,
-    legacy: bool,
     access_token: String,
     refresh_token: String,
     expires_at: u64,
@@ -167,17 +164,14 @@ fn keychain() -> Result<keyring::Entry> {
     Ok(keyring::Entry::new("miele-cli", "session")?)
 }
 
-pub fn login_url(client_id: &str, legacy: bool, state: &str) -> Url {
-    let mut params = vec![
+pub fn login_url(client_id: &str, state: &str) -> Url {
+    let params = vec![
         ("client_id", client_id),
         ("response_type", "code"),
         ("redirect_uri", REDIRECT),
         ("state", state),
+        ("scope", "openid mcs_thirdparty_read mcs_thirdparty_write"),
     ];
-    if legacy {
-        return Url::parse_with_params(&format!("{LEGACY_AUTH}/login"), &params).unwrap();
-    }
-    params.push(("scope", "openid mcs_thirdparty_read mcs_thirdparty_write"));
     Url::parse_with_params(&format!("{AUTH}/auth"), &params).unwrap()
 }
 
@@ -195,16 +189,10 @@ pub fn code_from_request(line: &str, state: &str) -> Option<String> {
 
 impl Session {
     /// Trade the code from the browser login for tokens.
-    pub fn login(
-        client_id: String,
-        client_secret: String,
-        legacy: bool,
-        code: &str,
-    ) -> Result<Self> {
+    pub fn login(client_id: String, client_secret: String, code: &str) -> Result<Self> {
         let mut s = Session {
             client_id,
             client_secret,
-            legacy,
             access_token: String::new(),
             refresh_token: String::new(),
             expires_at: 0,
@@ -218,11 +206,7 @@ impl Session {
     }
 
     fn token_request(&mut self, form: &[(&str, &str)]) -> Result<()> {
-        let url = if self.legacy {
-            format!("{LEGACY_AUTH}/token")
-        } else {
-            format!("{AUTH}/token")
-        };
+        let url = format!("{AUTH}/token");
         let mut form = form.to_vec();
         form.extend([
             ("client_id", self.client_id.as_str()),
@@ -269,6 +253,13 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn old_session_with_legacy_field_still_loads() {
+        let json = r#"{"client_id":"a","client_secret":"b","legacy":false,
+            "access_token":"c","refresh_token":"d","expires_at":1}"#;
+        assert!(serde_json::from_str::<Session>(json).is_ok());
+    }
 
     #[test]
     fn parses_sample_and_prints_status() {
