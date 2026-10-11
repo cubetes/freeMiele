@@ -40,6 +40,10 @@ pub struct State {
     pub signal_info: bool,
     pub signal_failure: bool,
     pub remote_enable: RemoteEnable,
+    #[serde(rename = "ProgramID", default)]
+    pub program_id: Reading,
+    #[serde(default)]
+    pub program_phase: Reading,
 }
 
 #[derive(Deserialize)]
@@ -54,6 +58,13 @@ pub struct RemoteEnable {
 pub struct Value {
     pub value_raw: i64,
     pub value_localized: String,
+}
+
+/// Like `Value`, but the API may leave both fields out or empty (coffee machine programs and phases).
+#[derive(Deserialize, Default)]
+pub struct Reading {
+    pub value_raw: Option<i64>,
+    pub value_localized: Option<String>,
 }
 
 /// Device id (fabrication number) -> device, as returned by `GET /devices`.
@@ -166,9 +177,84 @@ pub fn choose<'a>(
     }
 }
 
+// Codes from Home Assistant's Miele integration (Apache-2.0): homeassistant/components/miele/const.py
+fn coffee_program_name(code: i64) -> Option<&'static str> {
+    Some(match code {
+        24750 | 24759 | 24773 | 24787 | 24788 => "Rinsing the machine",
+        24758 => "Intermediate rinsing",
+        24778 => "Automatic maintenance",
+        24751 => "Descaling",
+        24753 => "Degreasing the brew unit",
+        24754 => "Rinsing the milk pipework",
+        24789 => "Cleaning the milk pipework",
+        24575 => "Descaling counter",
+        24576 => "Degreasing counter",
+        16016
+        | 16018
+        | 16019
+        | 16020
+        | 16021
+        | 16027
+        | 16033
+        | 16035
+        | 16037
+        | 24500
+        | 24502..=24504
+        | 24506
+        | 24513
+        | 24516
+        | 24537
+        | 24542
+        | 24549..=24558
+        | 24560
+        | 24562..=24569
+        | 24571..=24574
+        | 24800
+        | 24801
+        | 24813 => "Settings",
+        _ => return None,
+    })
+}
+
+fn coffee_phase_name(code: i64) -> Option<&'static str> {
+    Some(match code {
+        3073 => "Heating up",
+        4353 => "Espresso",
+        4354 => "Hot milk",
+        4355 => "Milk foam",
+        4361 | 4404 => "Dispensing",
+        4369 => "Pre-brewing",
+        4377 => "Grinding",
+        4385 => "Second espresso",
+        4393 => "Second pre-brewing",
+        4401 => "Second grinding",
+        4405 => "Rinse",
+        _ => return None, // 0, 4352, 65535 = not running
+    })
+}
+
+/// The API's own text if it has one, else our name for the code.
+fn reading_text(r: &Reading, ours: fn(i64) -> Option<&'static str>) -> Option<String> {
+    match r.value_localized.as_deref() {
+        Some(t) if !t.is_empty() => Some(t.to_string()),
+        _ => ours(r.value_raw?).map(String::from),
+    }
+}
+
 /// One line per device, e.g. "CM6160 Coffee Machine: Off (mobile start off) — needs attention".
+/// A coffee machine at work adds its program and phase: "In use, coffee · Grinding".
 pub fn status_line(d: &Device) -> String {
     let mut line = format!("{}: {}", name(d), d.state.status.value_localized);
+    // 0 = Off, 255 = Not connected
+    if d.ident.kind.value_raw == COFFEE_MACHINE
+        && ![0, 255].contains(&d.state.status.value_raw)
+        && let Some(program) = reading_text(&d.state.program_id, coffee_program_name)
+    {
+        line += &format!(", {program}");
+        if let Some(phase) = reading_text(&d.state.program_phase, coffee_phase_name) {
+            line += &format!(" · {phase}");
+        }
+    }
     let [h, m] = d.state.remaining_time;
     if h + m > 0 {
         line += &format!(", {h}h{m:02} left");
@@ -375,6 +461,36 @@ mod tests {
             status_line(d),
             "CM6160 Coffee Machine: Off (mobile start off) — needs attention (water, beans, tray or care)"
         );
+    }
+
+    #[test]
+    fn names_coffee_program_and_phase() {
+        let mut devices: Devices =
+            serde_json::from_str(include_str!("../fixtures/devices.sample.json")).unwrap();
+        let d = devices.get_mut("000123456789").unwrap();
+        let set = |d: &mut Device, status, id, id_text: &str, phase| {
+            d.state.status = Value {
+                value_raw: status,
+                value_localized: if status == 5 { "In use" } else { "Off" }.into(),
+            };
+            d.state.program_id = Reading {
+                value_raw: Some(id),
+                value_localized: Some(id_text.into()),
+            };
+            d.state.program_phase.value_raw = Some(phase);
+            status_line(d)
+        };
+        // Care programme: the API gives no text, so ours is used; phase 4352 = not running.
+        let line = set(d, 5, 24753, "", 4352);
+        assert!(line.starts_with("CM6160 Coffee Machine: In use, Degreasing the brew unit"));
+        assert!(!line.contains("(Not"));
+        // A drink: the API's own name, plus our phase.
+        let line = set(d, 5, 24000, "coffee", 4377);
+        assert!(line.starts_with("CM6160 Coffee Machine: In use, coffee · Grinding"));
+        // Unknown drink without a name: nothing added.
+        assert!(set(d, 5, 24000, "", 4377).starts_with("CM6160 Coffee Machine: In use (mobile"));
+        // Off stays as it was.
+        assert!(set(d, 0, 24753, "", 4352).starts_with("CM6160 Coffee Machine: Off (mobile"));
     }
 
     #[test]
