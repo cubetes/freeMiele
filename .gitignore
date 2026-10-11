@@ -2,3 +2,6 @@
 # Real API replies contain appliance serial numbers; only *.sample.json is shared.
 fixtures/*.json
 !fixtures/*.sample.json
+
+# Private notes on Miele's docs (Miele terms 11.6: no copying their documentation).
+docs/miele-api/

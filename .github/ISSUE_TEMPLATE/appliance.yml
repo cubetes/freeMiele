@@ -1,0 +1,40 @@
+name: Appliance support report
+description: Tell us what works (and what doesn't) with your Miele appliance.
+labels: ["appliance support"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        What the API allows differs by model, so reports from real machines are the most useful contribution.
+        **Replace every serial number with zeros before pasting JSON.** Never paste tokens or your client secret.
+  - type: input
+    id: model
+    attributes:
+      label: Model and type
+      placeholder: e.g. CM 6160, coffee machine
+    validations:
+      required: true
+  - type: checkboxes
+    id: works
+    attributes:
+      label: Which commands work?
+      options:
+        - label: status
+        - label: on / off
+        - label: brew (or starting a program)
+  - type: textarea
+    id: actions
+    attributes:
+      label: Reply of GET /devices/{id}/actions
+      description: See the README section "Help us support more appliances".
+      render: json
+  - type: textarea
+    id: programs
+    attributes:
+      label: Reply of GET /devices/{id}/programs
+      render: json
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: e.g. settings you had to enable on the machine, such as Mobile Start.

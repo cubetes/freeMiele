@@ -1,0 +1,35 @@
+name: Bug report
+description: Something in freeMiele doesn't work as expected.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never paste your client secret, tokens, or your appliance's serial number** (the long number the API uses as the device id). Replace serial numbers with zeros.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, and what you got. Paste the exact error message.
+      placeholder: |
+        $ cargo run -- brew coffee
+        Miele refused (400 Bad Request): ...
+    validations:
+      required: true
+  - type: input
+    id: appliance
+    attributes:
+      label: Appliance model
+      placeholder: e.g. CM 6160 coffee machine
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: freeMiele version or commit
+      placeholder: e.g. main @ 2327330
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: e.g. macOS 27.0

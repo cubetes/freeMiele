@@ -36,6 +36,10 @@ switch off after each drink, so turn it on again each time. `status` shows
 
 Your login is stored in the macOS Keychain (entry `miele-cli`), never in a file.
 
+## Contribute
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [project board](https://github.com/users/cubetes/projects/2).
+
 ## Help us support more appliances
 
 What an appliance can do over the API differs by model. To add support for yours, save

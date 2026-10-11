@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest something freeMiele should do.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What do you want to do?
+      description: Describe the situation, not the solution. "I want to know when descaling is due" beats "add a counter field".
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How could freeMiele help?
+  - type: input
+    id: appliance
+    attributes:
+      label: Which appliance(s)?
+      placeholder: e.g. WTR860 washer-dryer
