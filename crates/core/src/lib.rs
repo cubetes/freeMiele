@@ -490,7 +490,7 @@ mod tests {
     #[test]
     fn parses_sample_and_prints_status() {
         let devices: Devices =
-            serde_json::from_str(include_str!("../fixtures/devices.sample.json")).unwrap();
+            serde_json::from_str(include_str!("../../../fixtures/devices.sample.json")).unwrap();
         let d = &devices["000123456789"];
         assert_eq!(
             status_line(d),
@@ -501,7 +501,7 @@ mod tests {
     #[test]
     fn names_coffee_program_and_phase() {
         let mut devices: Devices =
-            serde_json::from_str(include_str!("../fixtures/devices.sample.json")).unwrap();
+            serde_json::from_str(include_str!("../../../fixtures/devices.sample.json")).unwrap();
         let d = devices.get_mut("000123456789").unwrap();
         let set = |d: &mut Device, status, id, id_text: &str, phase| {
             d.state.status = Value {
@@ -531,7 +531,7 @@ mod tests {
     #[test]
     fn shows_washer_dryer_program_phase_and_time() {
         let mut devices: Devices = serde_json::from_str(include_str!(
-            "../fixtures/devices.washer-running.sample.json"
+            "../../../fixtures/devices.washer-running.sample.json"
         ))
         .unwrap();
         let d = devices.get_mut("000000000024").unwrap();
@@ -552,7 +552,8 @@ mod tests {
     #[test]
     fn shows_care_counters_from_sample() {
         let f: FillingLevels =
-            serde_json::from_str(include_str!("../fixtures/fillingLevels.sample.json")).unwrap();
+            serde_json::from_str(include_str!("../../../fixtures/fillingLevels.sample.json"))
+                .unwrap();
         assert_eq!(
             care_line(&f).unwrap(),
             "  Care so far: descaled 20× · degreased 13× · milk system cleaned 12×"
@@ -569,7 +570,8 @@ mod tests {
     fn chooses_device() {
         let sample = || -> Device {
             let mut m: Devices =
-                serde_json::from_str(include_str!("../fixtures/devices.sample.json")).unwrap();
+                serde_json::from_str(include_str!("../../../fixtures/devices.sample.json"))
+                    .unwrap();
             m.remove("000123456789").unwrap()
         };
         let err = |c: &[(&str, &Device)], w| choose(c, w).err().unwrap().to_string();
@@ -594,7 +596,7 @@ mod tests {
     #[test]
     fn finds_program_ignoring_case() {
         let programs: Vec<Program> =
-            serde_json::from_str(include_str!("../fixtures/programs.sample.json")).unwrap();
+            serde_json::from_str(include_str!("../../../fixtures/programs.sample.json")).unwrap();
         assert_eq!(
             find_program(&programs, "flat white").unwrap().program_id,
             24012
@@ -607,7 +609,7 @@ mod tests {
         assert!(find_program(&programs, "").is_none());
 
         let actions: Actions =
-            serde_json::from_str(include_str!("../fixtures/actions.sample.json")).unwrap();
+            serde_json::from_str(include_str!("../../../fixtures/actions.sample.json")).unwrap();
         assert!(actions.power_on && !actions.power_off);
     }
 
