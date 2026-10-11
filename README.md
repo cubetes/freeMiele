@@ -22,7 +22,6 @@ See [supported appliances](docs/appliances.md) and the [roadmap](https://github.
 
 ```sh
 cargo run -- login            # asks for client ID and secret, then opens the browser
-cargo run -- login --legacy   # if the login page says your country isn't supported
 cargo run -- status
 cargo run -- on               # turns on whichever appliance allows it
 cargo run -- off

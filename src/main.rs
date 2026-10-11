@@ -15,11 +15,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Cmd {
     /// Log in to your Miele account (once); the login is kept in the macOS Keychain
-    Login {
-        /// Use Miele's older login service, for countries the new one doesn't cover yet
-        #[arg(long)]
-        legacy: bool,
-    },
+    Login,
     /// Show the state of every appliance on your Miele account
     Status,
     /// Turn on the appliance that can be turned on (e.g. the coffee machine)
@@ -39,7 +35,7 @@ fn main() {
 
 fn run(cmd: Cmd) -> Result<()> {
     match cmd {
-        Cmd::Login { legacy } => login(legacy),
+        Cmd::Login => login(),
         Cmd::Status => {
             let devices: Devices = get(&token()?, "/devices")?;
             if devices.is_empty() {
@@ -123,7 +119,7 @@ fn brew(drink: &str) -> Result<()> {
     Err("No appliance can make drinks right now (is it on and online?).".into())
 }
 
-fn login(legacy: bool) -> Result<()> {
+fn login() -> Result<()> {
     print!("Client ID: ");
     std::io::stdout().flush()?;
     let mut client_id = String::new();
@@ -133,7 +129,7 @@ fn login(legacy: bool) -> Result<()> {
     // Random value that ties the browser's answer to this login attempt.
     let state = format!("{:x}", RandomState::new().hash_one(std::process::id()));
     let listener = TcpListener::bind("127.0.0.1:8765")?;
-    let url = freemiele::login_url(client_id.trim(), legacy, &state);
+    let url = freemiele::login_url(client_id.trim(), &state);
     println!("Log in to Miele in your browser. If it doesn't open, visit:\n{url}");
     std::process::Command::new("open")
         .arg(url.as_str())
@@ -165,7 +161,7 @@ fn login(legacy: bool) -> Result<()> {
         ))?;
     };
 
-    Session::login(client_id.trim().to_string(), client_secret, legacy, &code)?.save()?;
+    Session::login(client_id.trim().to_string(), client_secret, &code)?.save()?;
     println!("Logged in. Try `cargo run -- status`.");
     Ok(())
 }
