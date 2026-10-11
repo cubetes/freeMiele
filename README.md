@@ -12,11 +12,21 @@ Unofficial. Not made or endorsed by Miele. Uses Miele's public cloud API.
 
 See [supported appliances](docs/appliances.md) and the [roadmap](https://github.com/users/cubetes/projects/2).
 
-## Before you start
+## Before you start: get your Miele keys (5 minutes)
 
-1. Pair your appliance in the Miele app, so it appears on your Miele account.
-2. Register at <https://developer.miele.com> to get your own **client ID** and
-   **client secret**. Every user needs their own; never commit or share them.
+freeMiele talks to Miele's official cloud API, which needs a free personal key pair.
+
+1. **Pair your appliance in the Miele app**, so it shows up on your Miele account.
+2. **Register** at <https://developer.miele.com/get-involved>: choose the personal,
+   non-commercial option, give any application name (e.g. "freeMiele") and your email.
+3. **Keep the two values Miele gives you:** a **client ID** and a **client secret**.
+   They are yours alone: never share them, paste them into issues or commit them.
+   One email address gets one key pair; registering again replaces the old one.
+4. **Log in:** run `miele login`, paste the client ID and secret, and sign in with your
+   Miele account in the browser window that opens.
+5. **Check it works:** `miele status` should list your appliances.
+
+Stuck? Ask in [Discussions](https://github.com/cubetes/freeMiele/discussions).
 
 ## Install
 
