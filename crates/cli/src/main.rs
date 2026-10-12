@@ -26,6 +26,8 @@ enum Cmd {
     Status,
     /// Print a line whenever an appliance changes, until you press Ctrl+C
     Watch,
+    /// Print raw appliance data as JSON for a support report; serial numbers and names are removed
+    Dump,
     /// How often your coffee machine has been cleaned, and the care schedule
     Care,
     /// Water and energy use per week and month (needs Miele's Data Act access)
@@ -86,6 +88,14 @@ fn run(cmd: Cmd) -> Result<()> {
         }
         Cmd::Care => care(),
         Cmd::Usage { runs } => usage(runs),
+        Cmd::Dump => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&freemiele::dump(&token()?)?)?
+            );
+            eprintln!("Serial numbers and names removed. Check the file before sharing it.");
+            Ok(())
+        }
         Cmd::On { device } => power(true, device.as_deref()),
         Cmd::Off { device } => power(false, device.as_deref()),
         Cmd::Brew { device, drink } => brew(device.as_deref(), &drink.join(" ")),

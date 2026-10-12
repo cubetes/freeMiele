@@ -115,6 +115,82 @@ pub fn put(token: &str, path: &str, body: serde_json::Value) -> Result<()> {
     Ok(())
 }
 
+/// Read-only copy of every appliance's raw replies, safe to share: see `strip_identifiers`.
+pub fn dump(token: &str) -> Result<serde_json::Value> {
+    use serde_json::{Value, json};
+    // A failed part is recorded, not fatal. The reqwest error would carry the URL (and the id).
+    let part = |id: &str, what: &str| -> Value {
+        get(token, &format!("/devices/{id}{what}?language=en")).unwrap_or_else(|e| {
+            let msg = match e.downcast::<reqwest::Error>() {
+                Ok(e) => e.without_url().to_string(),
+                Err(e) => e.to_string(),
+            };
+            json!({ "error": msg })
+        })
+    };
+    let devices: HashMap<String, Value> = get(token, "/devices?language=en")?;
+    // Sorted by model so appliance-1, appliance-2… are the same on every run.
+    let mut devices: Vec<_> = devices.iter().collect();
+    devices.sort_by_key(|(_, d)| d["ident"]["deviceIdentLabel"]["techType"].to_string());
+    let appliances: Vec<Value> = devices
+        .into_iter()
+        .enumerate()
+        .map(|(i, (id, device))| {
+            json!({
+                "id": format!("appliance-{}", i + 1),
+                "type": device["ident"]["type"]["value_localized"],
+                "model": device["ident"]["deviceIdentLabel"]["techType"],
+                "device": part(id, ""),
+                "actions": part(id, "/actions"),
+                "programs": part(id, "/programs"),
+                "fillingLevels": part(id, "/fillingLevels"),
+            })
+        })
+        .collect();
+    let mut out = json!({ "freemiele": env!("CARGO_PKG_VERSION"), "appliances": appliances });
+    strip_identifiers(&mut out);
+    Ok(out)
+}
+
+/// Remove what identifies a unit or a person: serial, index and material numbers, software ids,
+/// the user-set name, and any run of 10+ digits inside text (ids in error messages).
+pub fn strip_identifiers(v: &mut serde_json::Value) {
+    use serde_json::Value;
+    match v {
+        Value::Object(map) => {
+            map.retain(|k, _| {
+                !["fabNumber", "fabIndex", "matNumber", "swids"].contains(&k.as_str())
+            });
+            for (k, child) in map.iter_mut() {
+                match child {
+                    Value::String(_) if k == "deviceName" => *child = "".into(),
+                    _ => strip_identifiers(child),
+                }
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(strip_identifiers),
+        Value::String(s) => *s = redact_long_numbers(s),
+        _ => {}
+    }
+}
+
+/// Replace each run of 10+ digits with "[removed]", keeping the rest of the text readable.
+fn redact_long_numbers(s: &str) -> String {
+    let (mut out, mut run) = (String::new(), String::new());
+    for c in s.chars().chain(std::iter::once('\0')) {
+        if c.is_ascii_digit() {
+            run.push(c);
+            continue;
+        }
+        out += if run.len() >= 10 { "[removed]" } else { &run };
+        run.clear();
+        if c != '\0' {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// Case-insensitive match on the program name, e.g. "flat white" -> "Flat white".
 /// Never matches an empty name: the API lists a nameless program that must not start by accident.
 pub fn find_program<'a>(programs: &'a [Program], name: &str) -> Option<&'a Program> {
@@ -589,6 +665,42 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dump_strips_serials_and_names() {
+        let mut v: serde_json::Value = serde_json::from_str(
+            r#"{"freemiele":"0.2.0","appliances":[{"id":"appliance-1","type":"Washer-dryer","model":"WTR860",
+            "device":{"ident":{"deviceName":"Anna's washer","deviceIdentLabel":{"fabNumber":"000123456789",
+            "fabIndex":"64","techType":"WTR860","matNumber":"11223344"},
+            "xkmIdentLabel":{"techType":"EK037","releaseVersion":"02.72"},
+            "swids":["4497","1234567890"]},"state":{"status":{"value_raw":5}}},
+            "actions":{"error":"404 Not Found for /devices/000123456789/actions"},
+            "programs":[{"program":"Cottons","programId":1}],"fillingLevels":{"note":"123456789012"}}]}"#,
+        )
+        .unwrap();
+        strip_identifiers(&mut v);
+        let out = serde_json::to_string(&v).unwrap();
+        for gone in [
+            "000123456789",
+            "123456789012",
+            "11223344",
+            "1234567890",
+            "Anna",
+            "fab",
+            "swids",
+        ] {
+            assert!(!out.contains(gone), "{gone} survived: {out}");
+        }
+        assert!(
+            !out.split(|c: char| !c.is_ascii_digit())
+                .any(|r| r.len() >= 10)
+        );
+        assert!(
+            out.contains("WTR860") && out.contains("Cottons") && out.contains(r#""deviceName":"""#)
+        );
+        // The error keeps its meaning; only the id goes.
+        assert!(out.contains("404 Not Found for /devices/[removed]/actions"));
+    }
 
     #[test]
     fn keychain_errors_say_what_went_wrong() {

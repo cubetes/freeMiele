@@ -2,7 +2,8 @@
 
 What freeMiele can do depends on the model: Miele's API allows different things per appliance.
 This table lists models confirmed on real machines. Own one that's missing? Open an
-[Appliance support report](https://github.com/cubetes/freeMiele/issues/new?template=appliance.yml).
+[Appliance support report](https://github.com/cubetes/freeMiele/issues/new?template=appliance.yml)
+and attach the file from `miele dump > appliance.json`.
 
 | Model | Type | Status | Power on/off | Start | Extras | Notes |
 |---|---|---|---|---|---|---|
@@ -15,7 +16,7 @@ Last checked: 11 Oct 2026 (Helium 0.2.0), on macOS 27 with Apple silicon.
 
 Nobody has run freeMiele against these types yet. Miele's API says they're supported, but each
 model allows different things, so a real report is what turns a row into "works". Run
-`miele status` and open an [Appliance support report](https://github.com/cubetes/freeMiele/issues/new?template=appliance.yml).
+`miele dump > appliance.json` and open an [Appliance support report](https://github.com/cubetes/freeMiele/issues/new?template=appliance.yml).
 
 | Type | What Miele's API offers (per its docs) | freeMiele today |
 |---|---|---|

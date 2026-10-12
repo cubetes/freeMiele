@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         What the API allows differs by model, so reports from real machines are the most useful contribution.
-        **Replace every serial number with zeros before pasting JSON.** Never paste tokens or your client secret.
+        Run `miele dump > appliance.json` and attach the file. It removes serial numbers and names, but check it first. Never paste tokens or your client secret.
   - type: input
     id: model
     attributes:
@@ -14,6 +14,11 @@ body:
       placeholder: e.g. CM 6160, coffee machine
     validations:
       required: true
+  - type: textarea
+    id: dump
+    attributes:
+      label: Attach appliance.json
+      description: Drag the file from `miele dump > appliance.json` into this box.
   - type: checkboxes
     id: works
     attributes:
@@ -25,13 +30,13 @@ body:
   - type: textarea
     id: actions
     attributes:
-      label: Reply of GET /devices/{id}/actions
-      description: See the README section "Help us support more appliances".
+      label: Reply of GET /devices/{id}/actions (optional, if `miele dump` doesn't work)
+      description: Replace every serial number with zeros first.
       render: json
   - type: textarea
     id: programs
     attributes:
-      label: Reply of GET /devices/{id}/programs
+      label: Reply of GET /devices/{id}/programs (optional)
       render: json
   - type: textarea
     id: notes
