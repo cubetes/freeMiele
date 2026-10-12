@@ -703,7 +703,10 @@ pub fn login_url(client_id: &str, state: &str) -> Url {
         ("redirect_uri", REDIRECT),
         ("state", state),
         // mcs_dataact: read access to the EU Data Act API (Miele, by email, 2026-10-12).
-        ("scope", "openid mcs_thirdparty_read mcs_thirdparty_write mcs_dataact"),
+        (
+            "scope",
+            "openid mcs_thirdparty_read mcs_thirdparty_write mcs_dataact",
+        ),
     ];
     Url::parse_with_params(&format!("{AUTH}/auth"), &params).unwrap()
 }

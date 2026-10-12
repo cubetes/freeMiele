@@ -27,7 +27,7 @@ body:
     id: version
     attributes:
       label: freeMiele version or commit
-      placeholder: e.g. main @ 2327330
+      placeholder: output of `miele --version`, e.g. miele 0.3.0
   - type: input
     id: os
     attributes:
