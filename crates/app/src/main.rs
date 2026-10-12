@@ -10,6 +10,7 @@ use freemiele::{
 };
 use serde::{Deserialize, Serialize};
 use settings::Settings;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -21,6 +22,7 @@ use tauri::{
     AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Rect, State, WebviewUrl,
     WebviewWindow, WebviewWindowBuilder, WindowEvent,
 };
+use tauri_plugin_notification::NotificationExt;
 
 const IN_USE: i64 = 5;
 const NOT_CONNECTED: i64 = 255;
@@ -237,9 +239,11 @@ fn apply_title(app: &AppHandle) {
     }
 }
 
-fn show(app: &AppHandle, cards: Vec<Card>, titles: [String; 2], offline: bool) {
+fn show(app: &AppHandle, cards: Vec<Card>, titles: [String; 2], offline: bool, dot: bool) {
     let icon = if offline {
         include_bytes!("../icons/tray-off.png").as_slice()
+    } else if dot {
+        include_bytes!("../icons/tray-dot.png").as_slice()
     } else {
         include_bytes!("../icons/tray.png").as_slice()
     };
@@ -268,27 +272,71 @@ fn offline_card(message: String) -> Card {
     }
 }
 
+/// One washer update: `before` is (finished, dot) from the last update, None the first time we
+/// see it (already finished at start: no alert). Returns whether to notify, and the new (finished, dot).
+/// The dot stays until the door opens or the washer leaves Finished, even if the door shuts again.
+fn washer_alert(
+    before: Option<(bool, bool)>,
+    finished: bool,
+    door_open: bool,
+    enabled: bool,
+) -> (bool, (bool, bool)) {
+    let notify = enabled && finished && matches!(before, Some((false, _)));
+    let dot = enabled && finished && !door_open && (notify || before.is_some_and(|b| b.1));
+    (notify, (finished, dot))
+}
+
 fn watch(app: AppHandle) {
     match Session::load() {
-        Ok(mut session) => freemiele::watch(&mut session, |devices, _| {
-            if app.state::<Panel>().logged_out.load(Ordering::SeqCst) {
-                return;
-            }
-            let offline = devices
-                .values()
-                .all(|d| d.state.status.value_raw == NOT_CONNECTED);
-            let cards = sorted(devices)
-                .into_iter()
-                .map(|(id, d)| card(id, d))
-                .collect();
-            let titles = [tray_title(devices, true), tray_title(devices, false)];
-            show(&app, cards, titles, offline);
-        }),
+        Ok(mut session) => {
+            // Per washer: was it finished at the last update, and is its dot showing.
+            let mut seen: HashMap<String, (bool, bool)> = HashMap::new();
+            freemiele::watch(&mut session, move |devices, _| {
+                if app.state::<Panel>().logged_out.load(Ordering::SeqCst) {
+                    return;
+                }
+                let offline = devices
+                    .values()
+                    .all(|d| d.state.status.value_raw == NOT_CONNECTED);
+                let cards = sorted(devices)
+                    .into_iter()
+                    .map(|(id, d)| card(id, d))
+                    .collect();
+                let titles = [tray_title(devices, true), tray_title(devices, false)];
+                let enabled = settings_now(&app).washer_alert;
+                let mut dot = false;
+                for (id, d) in sorted(devices) {
+                    if d.ident.kind.value_raw == COFFEE_MACHINE {
+                        continue;
+                    }
+                    let before = seen.get(id).copied();
+                    let (notify, now) = washer_alert(
+                        before,
+                        d.state.status.value_raw == END,
+                        d.state.signal_door,
+                        enabled,
+                    );
+                    if notify {
+                        let name = activity(d).0.unwrap_or_else(|| "Washer-dryer".into());
+                        let _ = app
+                            .notification()
+                            .builder()
+                            .title(format!("{name} finished"))
+                            .body("Washer-dryer is done. Open the door to clear the alert.")
+                            .show();
+                    }
+                    dot |= now.1;
+                    seen.insert(id.clone(), now);
+                }
+                show(&app, cards, titles, offline, dot);
+            })
+        }
         Err(e) => show(
             &app,
             vec![offline_card(e.to_string())],
             Default::default(),
             true,
+            false,
         ),
     }
 }
@@ -528,6 +576,7 @@ async fn log_out(app: AppHandle) -> Result<(), String> {
         vec![offline_card(NOT_LOGGED_IN.into())],
         Default::default(),
         true,
+        false,
     );
     Ok(())
 }
@@ -587,6 +636,7 @@ fn glass(window: &WebviewWindow) {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .manage(Panel::default())
         .invoke_handler(tauri::generate_handler![
             cards,
@@ -775,5 +825,51 @@ mod tests {
         let c = card_of(&devices);
         assert_eq!((c.title.as_str(), c.progress), ("Finished", None));
         assert_eq!(tray_title(&devices, true), "");
+    }
+
+    #[test]
+    fn washer_alert_fires_on_the_change_and_dot_waits_for_the_door() {
+        // (before, finished, door open, switch on) -> (notify, (finished, dot))
+        let a = washer_alert;
+        assert_eq!(
+            a(None, true, false, true),
+            (false, (true, false)),
+            "already finished at start"
+        );
+        assert_eq!(
+            a(Some((false, false)), true, false, true),
+            (true, (true, true))
+        );
+        assert_eq!(
+            a(Some((true, true)), true, false, true),
+            (false, (true, true)),
+            "no repeat"
+        );
+        assert_eq!(
+            a(Some((true, true)), true, true, true),
+            (false, (true, false)),
+            "door opened"
+        );
+        assert_eq!(
+            a(Some((true, false)), true, false, true),
+            (false, (true, false)),
+            "door shut again"
+        );
+        assert_eq!(
+            a(Some((true, true)), false, false, true),
+            (false, (false, false)),
+            "left Finished"
+        );
+        assert_eq!(
+            a(Some((false, false)), true, false, false),
+            (false, (true, false)),
+            "switch off"
+        );
+    }
+
+    #[test]
+    fn door_flag_is_read_from_the_api() {
+        let d = washer();
+        assert!(!sorted(&d)[0].1.state.signal_door);
     }
 }

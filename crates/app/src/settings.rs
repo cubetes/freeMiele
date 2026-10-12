@@ -12,7 +12,7 @@ pub struct Settings {
     pub favourites: Vec<String>,
     /// Show minutes left of a running programme in the menu bar.
     pub time_left: bool,
-    /// Read by the washer alert (#52); only stored here.
+    /// Notify and show a dot on the menu-bar icon when the washer finishes.
     pub washer_alert: bool,
 }
 
