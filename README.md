@@ -84,8 +84,9 @@ two portions aren't available through Miele's API ([#34](https://github.com/cube
 end. Starting, stopping and pausing from the computer are planned
 ([v0.5 Boron](https://github.com/cubetes/freeMiele/milestone/4)).
 
-**Usage history** comes from Miele's EU Data Act API. Miele grants access on request, so until
-then `miele usage` says so ([#10](https://github.com/cubetes/freeMiele/issues/10)).
+**Usage history** comes from Miele's EU Data Act API, which covers newer appliance generations
+only (Miele lists e.g. WQ1000 washers and TQ1000 dryers; not the CM 6160 or WTR860). If you logged
+in before Lithium 0.3.1, run `miele login` once more so it asks for the Data Act permission.
 
 ## Mac app (preview)
 
