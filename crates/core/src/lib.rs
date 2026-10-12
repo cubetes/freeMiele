@@ -129,8 +129,11 @@ pub fn dump(token: &str) -> Result<serde_json::Value> {
         })
     };
     let devices: HashMap<String, Value> = get(token, "/devices?language=en")?;
+    // Sorted by model so appliance-1, appliance-2… are the same on every run.
+    let mut devices: Vec<_> = devices.iter().collect();
+    devices.sort_by_key(|(_, d)| d["ident"]["deviceIdentLabel"]["techType"].to_string());
     let appliances: Vec<Value> = devices
-        .iter()
+        .into_iter()
         .enumerate()
         .map(|(i, (id, device))| {
             json!({
@@ -150,7 +153,7 @@ pub fn dump(token: &str) -> Result<serde_json::Value> {
 }
 
 /// Remove what identifies a unit or a person: serial, index and material numbers, software ids,
-/// the user-set name, and any text holding a run of 10+ digits (ids in error messages).
+/// the user-set name, and any run of 10+ digits inside text (ids in error messages).
 pub fn strip_identifiers(v: &mut serde_json::Value) {
     use serde_json::Value;
     match v {
@@ -166,14 +169,26 @@ pub fn strip_identifiers(v: &mut serde_json::Value) {
             }
         }
         Value::Array(items) => items.iter_mut().for_each(strip_identifiers),
-        Value::String(s)
-            if s.split(|c: char| !c.is_ascii_digit())
-                .any(|r| r.len() >= 10) =>
-        {
-            s.clear()
-        }
+        Value::String(s) => *s = redact_long_numbers(s),
         _ => {}
     }
+}
+
+/// Replace each run of 10+ digits with "[removed]", keeping the rest of the text readable.
+fn redact_long_numbers(s: &str) -> String {
+    let (mut out, mut run) = (String::new(), String::new());
+    for c in s.chars().chain(std::iter::once('\0')) {
+        if c.is_ascii_digit() {
+            run.push(c);
+            continue;
+        }
+        out += if run.len() >= 10 { "[removed]" } else { &run };
+        run.clear();
+        if c != '\0' {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// Case-insensitive match on the program name, e.g. "flat white" -> "Flat white".
@@ -683,6 +698,8 @@ mod tests {
         assert!(
             out.contains("WTR860") && out.contains("Cottons") && out.contains(r#""deviceName":"""#)
         );
+        // The error keeps its meaning; only the id goes.
+        assert!(out.contains("404 Not Found for /devices/[removed]/actions"));
     }
 
     #[test]
