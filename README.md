@@ -119,6 +119,11 @@ names are removed. Check the file, then attach it to an
 - How we work: [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md)
 - Found a security problem? Report it privately: [SECURITY.md](SECURITY.md)
 
+## Support
+
+freeMiele is free and made in spare time. If it saves you a trip to the coffee machine, you can
+[buy me a coffee](https://buymeacoffee.com/cubetes). Reports from new appliance models help just as much.
+
 ## Develop
 
 ```sh
