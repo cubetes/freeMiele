@@ -71,15 +71,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and the [project board](https://github.co
 
 ## Help us support more appliances
 
-What an appliance can do over the API differs by model. To add support for yours, save
-its replies (after `login`, using the token from Miele's API test page):
+What an appliance can do over the API differs by model. To add support for yours, log in and run:
 
-- `GET /devices` → `fixtures/devices.json`
-- `GET /devices/{id}/actions` → `fixtures/actions.json`
-- `GET /devices/{id}/programs` → `fixtures/programs.json`
+```sh
+miele dump > appliance.json
+```
 
-These real files are git-ignored because they contain serial numbers. To share one,
-copy it to `*.sample.json` and replace the serial number with zeros.
+It reads (never changes) your appliances' status, actions and programmes. Serial numbers and
+names are removed. Check the file, then attach it to an
+[Appliance support report](https://github.com/cubetes/freeMiele/issues/new?template=appliance.yml).
 
 ## Logo
 
