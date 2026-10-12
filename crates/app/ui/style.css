@@ -1,0 +1,36 @@
+/* Fonts are bundled (SIL OFL, see fonts/). Schibsted Grotesk sets titles and every digit:
+   Atkinson Hyperlegible Next has a slashed zero, Schibsted Grotesk a plain one. */
+@font-face{font-family:'Atkinson Hyperlegible Next';font-weight:200 800;src:url(fonts/AtkinsonHyperlegibleNext.ttf) format('truetype')}
+@font-face{font-family:'Schibsted Grotesk';font-weight:400 900;src:url(fonts/SchibstedGrotesk.ttf) format('truetype')}
+@font-face{font-family:'FM Digits';font-weight:400 900;src:url(fonts/SchibstedGrotesk.ttf) format('truetype');unicode-range:U+0030-0039}
+
+:root{--surface:#f5f8f7;--raised:#ffffff;--line:#d3dedb;--ink:#14211f;--muted:#4f605c;--brand:#0b6b62;--crema:#a9521c;--crema-bg:#f6e4d8;--attention:#8a5300;--att-bg:#f7ead2;--fault:#b3261e;--fault-bg:#f9e0dd;--chip-ok:#d9ede9;--track:#e3ebe9;--off-bg:#e3ebe9}
+@media (prefers-color-scheme:dark){:root{--surface:#0e1615;--raised:#172220;--line:#2b3b38;--ink:#e4edeb;--muted:#9cb0ab;--brand:#4fc1b2;--crema:#e5935c;--crema-bg:#3b2617;--attention:#e8b24a;--att-bg:#3a2f17;--fault:#ff8a80;--fault-bg:#3d1f1c;--chip-ok:#21403b;--track:#2b3b38;--off-bg:#2b3b38}}
+@media (prefers-contrast:more){:root{--line:var(--muted)}}
+
+html,body{margin:0;background:transparent}
+body{--body:'FM Digits','Atkinson Hyperlegible Next','Atkinson Hyperlegible',system-ui,sans-serif;--display:'Schibsted Grotesk','Helvetica Neue',sans-serif;font-family:var(--body);font-size:13px;line-height:18px;color:var(--ink);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;cursor:default;user-select:none}
+/* The window is the glass (native vibrancy behind it): the panel only adds the inset and the radius. */
+.panel{width:340px;box-sizing:border-box;padding:8px;display:flex;flex-direction:column;gap:8px;border-radius:20px}
+@media (prefers-reduced-transparency:reduce){.panel{background:var(--surface)}}
+.head{display:flex;align-items:center;gap:8px;height:28px;padding:2px 2px 0 8px}
+.name{font-family:var(--display);font-weight:700;font-size:15px}
+.unofficial{font-size:12px;color:var(--muted)}
+.grow{flex-grow:1}
+.icon-btn{width:28px;height:28px;border-radius:999px;border:none;background:transparent;display:grid;place-items:center;padding:0;color:var(--ink)}
+.icon-btn:hover{background:var(--track)}
+.icon-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.cards{display:flex;flex-direction:column;gap:8px}
+.card{display:flex;flex-direction:column;gap:10px;padding:12px;border-radius:12px;background:var(--raised);border:0.5px solid var(--line)}
+.meta{display:flex;align-items:center;gap:8px}
+.label{flex-grow:1;font-size:12px;line-height:16px;color:var(--muted)}
+.chip{font-size:11px;line-height:16px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;border-radius:999px;padding:1px 8px;white-space:nowrap}
+.ready{color:var(--brand);background:var(--chip-ok)}
+.running{color:var(--crema);background:var(--crema-bg)}
+.attention{color:var(--attention);background:var(--att-bg)}
+.fault{color:var(--fault);background:var(--fault-bg)}
+.off{color:var(--muted);background:var(--off-bg)}
+.title{font-family:var(--display);font-weight:600;font-size:17px;line-height:22px;font-variant-numeric:proportional-nums}
+.sub{color:var(--muted);margin-top:2px;user-select:text}
+.track{height:6px;border-radius:3px;background:var(--track);overflow:hidden}
+.track>div{height:100%;border-radius:3px;background:var(--crema)}
