@@ -114,11 +114,12 @@ fn card(id: &str, d: &Device) -> Card {
     let [h, m] = s.remaining_time;
     let left = (h + m > 0 && status != END).then(|| time_left(s.remaining_time));
     let mobile_off = s.remote_enable.full_remote_control && !s.remote_enable.mobile_start;
+    let attention = freemiele::needs_attention(d);
     let tone = match status {
         _ if s.signal_failure => "fault",
         1 | NOT_CONNECTED => "off",
         IN_USE => "running",
-        _ if s.signal_info || mobile_off => "attention",
+        _ if attention || mobile_off => "attention",
         _ => "ready",
     };
     let mut chip = match status {
@@ -140,7 +141,7 @@ fn card(id: &str, d: &Device) -> Card {
         program
     } else if s.signal_failure {
         Some("Look at the appliance.".into())
-    } else if s.signal_info {
+    } else if attention {
         Some("Needs attention: water, beans, tray or care.".into())
     } else if mobile_off && status != 1 {
         Some("Mobile start is off. Turn it on at the machine.".into())
@@ -169,7 +170,7 @@ fn card(id: &str, d: &Device) -> Card {
             ),
         };
         title = t.into();
-        if !(c.on && s.signal_info) {
+        if !(c.on && attention) {
             sub = Some(hint.into()); // "needs attention" outranks the hint
         }
         if c.on && !c.mobile_start {

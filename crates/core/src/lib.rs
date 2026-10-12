@@ -339,6 +339,18 @@ pub fn choose<'a>(
     }
 }
 
+/// Programme code a coffee machine reports while its display asks for care, e.g. "empty the drip
+/// tray" (Home Assistant: `check_appliance`). Seen on a CM 6160 with `signalInfo` still false.
+const CHECK_APPLIANCE: i64 = 17004;
+
+/// The appliance's display is asking for something: the official info flag, or a coffee machine
+/// sitting on its "check appliance" code.
+pub fn needs_attention(d: &Device) -> bool {
+    d.state.signal_info
+        || (d.ident.kind.value_raw == COFFEE_MACHINE
+            && d.state.program_id.value_raw == Some(CHECK_APPLIANCE))
+}
+
 // Codes from Home Assistant's Miele integration (Apache-2.0): homeassistant/components/miele/const.py
 fn coffee_program_name(code: i64) -> Option<&'static str> {
     Some(match code {
@@ -450,7 +462,7 @@ pub fn status_line(d: &Device) -> String {
     }
     if d.state.signal_failure {
         line += " — FAULT";
-    } else if d.state.signal_info {
+    } else if needs_attention(d) {
         line += " — needs attention (water, beans, tray or care)";
     }
     line
@@ -835,6 +847,19 @@ mod tests {
         let json = r#"{"client_id":"a","client_secret":"b","legacy":false,
             "access_token":"c","refresh_token":"d","expires_at":1}"#;
         assert!(serde_json::from_str::<Session>(json).is_ok());
+    }
+
+    #[test]
+    fn check_appliance_code_needs_attention() {
+        let mut devices: Devices =
+            serde_json::from_str(include_str!("../../../fixtures/devices.sample.json")).unwrap();
+        let d = devices.get_mut("000123456789").unwrap();
+        d.state.signal_info = false;
+        d.state.status.value_raw = 2;
+        assert!(!needs_attention(d));
+        d.state.program_id.value_raw = Some(17004);
+        assert!(needs_attention(d));
+        assert!(status_line(d).contains("needs attention"));
     }
 
     #[test]
