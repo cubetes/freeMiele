@@ -124,7 +124,7 @@ pub enum Request {
     Brew,
 }
 
-/// After a 5xx reply, did the machine do what was asked? On: not Off (1) and not Not connected (255).
+/// Did the machine do what was asked? On: not Off (1) and not Not connected (255).
 /// Off: Off (1). Brew: In use (5).
 pub fn confirmed(request: Request, state_after: &State) -> bool {
     let status = state_after.status.value_raw;
@@ -225,32 +225,65 @@ fn redact_long_numbers(s: &str) -> String {
     out
 }
 
-/// Sends a command. Miele sometimes answers 5xx for one that worked, so after a 5xx we
-/// re-read the machine. Ok(true) = it did what was asked despite the error.
+/// How a power or brew command ended, judged by what the machine reports, not by Miele's reply.
+#[derive(Debug, PartialEq)]
+pub enum Outcome {
+    Done,
+    /// Miele answered 5xx, but the machine did it.
+    DoneDespiteServerError,
+    /// Miele answered, but the machine never showed the change (e.g. empty water tank).
+    NotConfirmed,
+}
+
+/// Wait for the machine to show the change: `states` are readings taken in turn, newest last.
+fn decide(
+    request: Request,
+    server_error: bool,
+    states: impl IntoIterator<Item = State>,
+) -> Outcome {
+    match (
+        states.into_iter().any(|s| confirmed(request, &s)),
+        server_error,
+    ) {
+        (true, false) => Outcome::Done,
+        (true, true) => Outcome::DoneDespiteServerError,
+        (false, _) => Outcome::NotConfirmed,
+    }
+}
+
+// Miele's state lags a command, so re-read every 2 s.
+const POLL_EVERY: Duration = Duration::from_secs(2);
+// Drinks start slowly (heating, grinding); power changes show sooner.
+const BREW_WAIT: Duration = Duration::from_secs(15);
+const POWER_WAIT: Duration = Duration::from_secs(10);
+
+/// Sends a command, then polls the machine until it shows the change or `wait` runs out.
+/// Miele may answer 2xx for a command that did nothing, or 5xx for one that worked.
+/// A 4xx is an immediate refusal.
+// lean: polling; the live stream (`Sse`) could confirm instead if the polling load matters.
 fn command(
     token: &str,
     id: &str,
     what: &str,
     body: serde_json::Value,
     request: Request,
-) -> Result<bool> {
+    wait: Duration,
+) -> Result<Outcome> {
     let path = format!("/devices/{id}");
-    let Err(e) = put(token, &format!("{path}/{what}"), body) else {
-        return Ok(false);
+    let server_error = match put(token, &format!("{path}/{what}"), body) {
+        Ok(()) => false,
+        Err(e) if matches!(e.downcast_ref::<Rejected>(), Some(r) if r.0.is_server_error()) => true,
+        Err(e) => return Err(e),
     };
-    if !matches!(e.downcast_ref::<Rejected>(), Some(r) if r.0.is_server_error()) {
-        return Err(e);
-    }
-    // lean: one fixed 2 s wait before re-reading; add a short retry if slow machines report false errors.
-    std::thread::sleep(Duration::from_secs(2));
-    match get::<Device>(token, &path) {
-        Ok(d) if confirmed(request, &d.state) => Ok(true),
-        _ => Err(e),
-    }
+    let readings = (0..wait.as_secs() / POLL_EVERY.as_secs()).filter_map(|_| {
+        std::thread::sleep(POLL_EVERY);
+        get::<Device>(token, &path).ok().map(|d| d.state)
+    });
+    Ok(decide(request, server_error, readings))
 }
 
-/// Turn a device on or off. Ok(true) = Miele reported a server error but it did it.
-pub fn power(token: &str, id: &str, on: bool) -> Result<bool> {
+/// Turn a device on or off.
+pub fn power(token: &str, id: &str, on: bool) -> Result<Outcome> {
     let (key, request) = if on {
         ("powerOn", Request::On)
     } else {
@@ -262,13 +295,14 @@ pub fn power(token: &str, id: &str, on: bool) -> Result<bool> {
         "actions",
         serde_json::json!({ key: true }),
         request,
+        POWER_WAIT,
     )
 }
 
-/// Start a drink. Ok(true) = Miele reported a server error but the drink started.
-pub fn brew(token: &str, id: &str, program_id: u32) -> Result<bool> {
+/// Start a drink.
+pub fn brew(token: &str, id: &str, program_id: u32) -> Result<Outcome> {
     let body = serde_json::json!({ "programId": program_id });
-    command(token, id, "programs", body, Request::Brew)
+    command(token, id, "programs", body, Request::Brew, BREW_WAIT)
 }
 
 /// Case-insensitive match on the program name, e.g. "flat white" -> "Flat white".
@@ -463,7 +497,7 @@ pub fn status_line(d: &Device) -> String {
     if d.state.signal_failure {
         line += " — FAULT";
     } else if needs_attention(d) {
-        line += " — needs attention (water, beans, tray or care)";
+        line += " — needs attention: check the machine's display";
     }
     line
 }
@@ -782,6 +816,35 @@ mod tests {
     }
 
     #[test]
+    fn decide_waits_for_the_machine() {
+        let seen = |codes: &[i64]| codes.iter().map(|&c| after(c)).collect::<Vec<_>>();
+        // Machine on, drink never starts (empty tank): not confirmed, whatever Miele replied.
+        assert_eq!(
+            decide(Request::Brew, false, seen(&[2, 2, 2])),
+            Outcome::NotConfirmed
+        );
+        assert_eq!(
+            decide(Request::Brew, true, seen(&[2, 2])),
+            Outcome::NotConfirmed
+        );
+        assert_eq!(
+            decide(Request::Brew, false, seen(&[])),
+            Outcome::NotConfirmed
+        );
+        // Changes later on count.
+        assert_eq!(decide(Request::Brew, false, seen(&[2, 5])), Outcome::Done);
+        assert_eq!(
+            decide(Request::Brew, true, seen(&[2, 5])),
+            Outcome::DoneDespiteServerError
+        );
+        assert_eq!(decide(Request::On, false, seen(&[1, 1, 2])), Outcome::Done);
+        assert_eq!(
+            decide(Request::Off, true, seen(&[2, 1])),
+            Outcome::DoneDespiteServerError
+        );
+    }
+
+    #[test]
     fn confirmed_checks_what_the_machine_did() {
         for (request, status, want) in [
             (Request::On, 2, true),
@@ -869,7 +932,7 @@ mod tests {
         let d = &devices["000123456789"];
         assert_eq!(
             status_line(d),
-            "CM6160 Coffee Machine: Off (mobile start off) — needs attention (water, beans, tray or care)"
+            "CM6160 Coffee Machine: Off (mobile start off) — needs attention: check the machine's display"
         );
     }
 

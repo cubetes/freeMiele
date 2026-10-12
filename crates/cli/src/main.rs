@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand};
 use freemiele::dataact::{self, Appliance, Consumption, Refused, Run};
 use freemiele::{
-    Actions, CARE_SCHEDULE, COFFEE_MACHINE, Devices, FillingLevels, NOT_LOGGED_IN, Program, Result,
-    Session, care_line, choose, get, name,
+    Actions, CARE_SCHEDULE, COFFEE_MACHINE, Devices, FillingLevels, NOT_LOGGED_IN, Outcome,
+    Program, Result, Session, care_line, choose, get, name,
 };
 use std::hash::{BuildHasher, RandomState};
 use std::io::{BufRead, BufReader, Write};
@@ -222,13 +222,14 @@ fn power(on: bool, device: Option<&str>) -> Result<()> {
         .into());
     }
     let (id, d) = choose(&candidates, device)?;
-    let note = freemiele::power(&token, id, on)?;
-    println!("{}: turning {}.", name(d), if on { "on" } else { "off" });
-    if note {
-        println!(
-            "(Miele reported a server error, but the machine is {}.)",
-            if on { "on" } else { "off" }
-        );
+    let word = if on { "on" } else { "off" };
+    let outcome = freemiele::power(&token, id, on)?;
+    if outcome == Outcome::NotConfirmed {
+        return Err(format!("The machine didn't turn {word}. Check its display.").into());
+    }
+    println!("{}: turning {word}.", name(d));
+    if outcome == Outcome::DoneDespiteServerError {
+        println!("(Miele reported a server error, but the machine is {word}.)");
     }
     Ok(())
 }
@@ -270,9 +271,12 @@ fn brew(device: Option<&str>, drink: &str) -> Result<()> {
         )
         .into());
     }
-    let note = freemiele::brew(&token, id, p.program_id)?;
+    let outcome = freemiele::brew(&token, id, p.program_id)?;
+    if outcome == Outcome::NotConfirmed {
+        return Err("The machine didn't start the drink. Check its display: water tank, beans or drip tray.".into());
+    }
     println!("{}: making {}.", name(d), p.program);
-    if note {
+    if outcome == Outcome::DoneDespiteServerError {
         println!("(Miele reported a server error, but the machine started the drink.)");
     }
     Ok(())

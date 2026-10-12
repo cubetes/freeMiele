@@ -3,7 +3,8 @@
 //! `freemiele` core.
 
 use freemiele::{
-    COFFEE_MACHINE, Device, Devices, END, Program, Rejected, Session, activity, find_program, get,
+    COFFEE_MACHINE, Device, Devices, END, Outcome, Program, Rejected, Session, activity,
+    find_program, get,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
@@ -142,7 +143,7 @@ fn card(id: &str, d: &Device) -> Card {
     } else if s.signal_failure {
         Some("Look at the appliance.".into())
     } else if attention {
-        Some("Needs attention: water, beans, tray or care.".into())
+        Some("Needs attention: check the machine's display.".into())
     } else if mobile_off && status != 1 {
         Some("Mobile start is off. Turn it on at the machine.".into())
     } else {
@@ -303,15 +304,43 @@ async fn drinks(device_id: String) -> Result<Drinks, String> {
     .await
 }
 
-/// Start a drink. Only the page's Brew button calls this.
+/// What the card says once the machine has (or has not) shown the change.
+fn said(outcome: Outcome, done: &str, failed: &str) -> String {
+    match outcome {
+        Outcome::Done => format!("{done}."),
+        Outcome::DoneDespiteServerError => {
+            format!("{done}. Miele reported a server error, but the machine did it.")
+        }
+        Outcome::NotConfirmed => failed.into(),
+    }
+}
+
+/// Start a drink. Only the page's Brew button calls this. Returns the note for the card.
 #[tauri::command]
-async fn brew(device_id: String, program_id: u32) -> Result<(), String> {
-    miele(move |token| freemiele::brew(token, &device_id, program_id).map(drop)).await
+async fn brew(device_id: String, program_id: u32, drink: String) -> Result<String, String> {
+    miele(move |token| {
+        let outcome = freemiele::brew(token, &device_id, program_id)?;
+        Ok(said(
+            outcome,
+            &format!("Making {drink}"),
+            "The machine didn't start the drink. Check its display: water tank, beans or drip tray.",
+        ))
+    })
+    .await
 }
 
 #[tauri::command]
-async fn power(device_id: String, on: bool) -> Result<(), String> {
-    miele(move |token| freemiele::power(token, &device_id, on).map(drop)).await
+async fn power(device_id: String, on: bool) -> Result<String, String> {
+    miele(move |token| {
+        let word = if on { "on" } else { "off" };
+        let outcome = freemiele::power(token, &device_id, on)?;
+        Ok(said(
+            outcome,
+            &format!("Turned {word}"),
+            &format!("The machine didn't turn {word}. Check its display."),
+        ))
+    })
+    .await
 }
 
 /// "Other drink": a native menu under the pointer. The pick comes back as a "drink" event.

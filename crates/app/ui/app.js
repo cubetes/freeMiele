@@ -40,12 +40,11 @@ function say(id, text, seconds = 6) {
   render(last);
 }
 
-async function act(id, call, ok) {
+async function act(id, call, doing) {
   busy.add(id);
-  say(id, 'Sending…', 0);
+  say(id, doing, 0);
   try {
-    await call();
-    say(id, ok);
+    say(id, await call());
   } catch (e) {
     say(id, String(e));
   }
@@ -101,8 +100,11 @@ function coffeeControls(card, c) {
   if (c.on) {
     // Brew only for a drink picked by hand, with Mobile Start on, one request at a time.
     row.append(el('span', 'grow'), button(chosen ? `Brew ${escape(chosen.name)}` : 'Brew', 'primary', () =>
-      act(id, async () => { await tauri.core.invoke('brew', { deviceId: id, programId: chosen.id }); picked.delete(id); },
-        `Making ${chosen.name}…`), !c.mobile_start || !chosen || working));
+      act(id, async () => {
+        const note = await tauri.core.invoke('brew', { deviceId: id, programId: chosen.id, drink: chosen.name });
+        picked.delete(id);
+        return note;
+      }, `Starting ${chosen.name}…`), !c.mobile_start || !chosen || working));
   }
   card.append(row);
 }
