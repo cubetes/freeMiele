@@ -225,6 +225,52 @@ fn redact_long_numbers(s: &str) -> String {
     out
 }
 
+/// Sends a command. Miele sometimes answers 5xx for one that worked, so after a 5xx we
+/// re-read the machine. Ok(true) = it did what was asked despite the error.
+fn command(
+    token: &str,
+    id: &str,
+    what: &str,
+    body: serde_json::Value,
+    request: Request,
+) -> Result<bool> {
+    let path = format!("/devices/{id}");
+    let Err(e) = put(token, &format!("{path}/{what}"), body) else {
+        return Ok(false);
+    };
+    if !matches!(e.downcast_ref::<Rejected>(), Some(r) if r.0.is_server_error()) {
+        return Err(e);
+    }
+    // lean: one fixed 2 s wait before re-reading; add a short retry if slow machines report false errors.
+    std::thread::sleep(Duration::from_secs(2));
+    match get::<Device>(token, &path) {
+        Ok(d) if confirmed(request, &d.state) => Ok(true),
+        _ => Err(e),
+    }
+}
+
+/// Turn a device on or off. Ok(true) = Miele reported a server error but it did it.
+pub fn power(token: &str, id: &str, on: bool) -> Result<bool> {
+    let (key, request) = if on {
+        ("powerOn", Request::On)
+    } else {
+        ("powerOff", Request::Off)
+    };
+    command(
+        token,
+        id,
+        "actions",
+        serde_json::json!({ key: true }),
+        request,
+    )
+}
+
+/// Start a drink. Ok(true) = Miele reported a server error but the drink started.
+pub fn brew(token: &str, id: &str, program_id: u32) -> Result<bool> {
+    let body = serde_json::json!({ "programId": program_id });
+    command(token, id, "programs", body, Request::Brew)
+}
+
 /// Case-insensitive match on the program name, e.g. "flat white" -> "Flat white".
 /// Never matches an empty name: the API lists a nameless program that must not start by accident.
 pub fn find_program<'a>(programs: &'a [Program], name: &str) -> Option<&'a Program> {

@@ -4,9 +4,9 @@
 @font-face{font-family:'Schibsted Grotesk';font-weight:400 900;src:url(fonts/SchibstedGrotesk.ttf) format('truetype')}
 @font-face{font-family:'FM Digits';font-weight:400 900;src:url(fonts/SchibstedGrotesk.ttf) format('truetype');unicode-range:U+0030-0039}
 
-:root{--surface:#f5f8f7;--raised:#ffffff;--line:#d3dedb;--ink:#14211f;--muted:#4f605c;--brand:#0b6b62;--crema:#a9521c;--crema-bg:#f6e4d8;--attention:#8a5300;--att-bg:#f7ead2;--fault:#b3261e;--fault-bg:#f9e0dd;--chip-ok:#d9ede9;--track:#e3ebe9;--off-bg:#e3ebe9}
-@media (prefers-color-scheme:dark){:root{--surface:#0e1615;--raised:#172220;--line:#2b3b38;--ink:#e4edeb;--muted:#9cb0ab;--brand:#4fc1b2;--crema:#e5935c;--crema-bg:#3b2617;--attention:#e8b24a;--att-bg:#3a2f17;--fault:#ff8a80;--fault-bg:#3d1f1c;--chip-ok:#21403b;--track:#2b3b38;--off-bg:#2b3b38}}
-@media (prefers-contrast:more){:root{--line:var(--muted)}}
+:root{--surface:#f5f8f7;--raised:#ffffff;--line:#d3dedb;--ink:#14211f;--muted:#4f605c;--brand:#0b6b62;--crema:#a9521c;--crema-bg:#f6e4d8;--attention:#8a5300;--att-bg:#f7ead2;--fault:#b3261e;--fault-bg:#f9e0dd;--chip-ok:#d9ede9;--track:#e3ebe9;--off-bg:#e3ebe9;--line-strong:#7f948f;--tint:#b4dbd3;--btn:#f5f8f7;--on-brand:#ffffff}
+@media (prefers-color-scheme:dark){:root{--surface:#0e1615;--raised:#172220;--line:#2b3b38;--ink:#e4edeb;--muted:#9cb0ab;--brand:#4fc1b2;--crema:#e5935c;--crema-bg:#3b2617;--attention:#e8b24a;--att-bg:#3a2f17;--fault:#ff8a80;--fault-bg:#3d1f1c;--chip-ok:#21403b;--track:#2b3b38;--off-bg:#2b3b38;--line-strong:#5f7571;--tint:#21403b;--btn:#24332f;--on-brand:#04231f}}
+@media (prefers-contrast:more){:root{--line:var(--muted);--line-strong:var(--muted)}}
 
 html,body{margin:0;background:transparent}
 body{--body:'FM Digits','Atkinson Hyperlegible Next','Atkinson Hyperlegible',system-ui,sans-serif;--display:'Schibsted Grotesk','Helvetica Neue',sans-serif;font-family:var(--body);font-size:13px;line-height:18px;color:var(--ink);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;cursor:default;user-select:none}
@@ -34,3 +34,19 @@ body{--body:'FM Digits','Atkinson Hyperlegible Next','Atkinson Hyperlegible',sys
 .sub{color:var(--muted);margin-top:2px;user-select:text}
 .track{height:6px;border-radius:3px;background:var(--track);overflow:hidden}
 .track>div{height:100%;border-radius:3px;background:var(--crema)}
+.steps{margin:6px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px}
+.steps li{display:flex;gap:8px}
+.n{flex:none;width:18px;height:18px;border-radius:999px;border:1.5px solid var(--attention);box-sizing:border-box;display:grid;place-items:center;font-size:11px;font-weight:700;color:var(--attention)}
+.row{display:flex;align-items:center;gap:8px}
+.btn{height:28px;box-sizing:border-box;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border-radius:8px;border:0.5px solid var(--line-strong);background:var(--btn);box-shadow:0 0.5px 1px rgba(0,0,0,0.1);font:400 13px/1 var(--body);color:var(--ink);white-space:nowrap}
+.btn svg{flex:none}
+.btn.primary{background:var(--brand);color:var(--on-brand);border-color:transparent;font-weight:700;padding:0 12px}
+.btn:disabled{opacity:0.4;box-shadow:none}
+.btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.picks{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.picks .btn{width:100%}
+/* The picked drink: soft brand fill and a brand edge, not a focus ring. */
+.picks .btn[aria-pressed="true"]{background:var(--tint);border:1.5px solid var(--brand);font-weight:700;box-shadow:none}
+.picks .more{justify-content:space-between;color:var(--muted);background:transparent;box-shadow:none}
+.picks .more[aria-pressed="true"]{color:var(--ink);justify-content:flex-start}
+.picks .more[aria-pressed="true"] svg:last-child{margin-left:auto}
