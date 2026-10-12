@@ -10,8 +10,8 @@ live, turn them on and off, and make a coffee.
 
 ```text
 $ miele status
-CM6160 Coffee machine: In use, Degreasing the brew unit
-WTR860 Washer dryer: In use, Sportswear · Rinsing, 0h23 left
+CM6160 Coffee machine: In use, Degreasing the brew unit (mobile start off)
+WTR860 Washer dryer: In use, Sportswear · Rinsing, 0h23 left (mobile start off)
 ```
 
 Unofficial. Not made or endorsed by Miele. Uses Miele's official cloud API with your own free key.
