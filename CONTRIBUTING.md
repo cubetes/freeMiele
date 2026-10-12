@@ -39,6 +39,34 @@ The code is a Cargo workspace: `crates/core` (package `freemiele`) talks to Miel
 - **Starting appliances is real.** Never run commands that start, stop or power an appliance in
   tests or CI.
 
+## Issues: how we keep them useful
+
+- **Same problem or same model?** Add a 👍 reaction instead of a "me too" comment. Comment only
+  with new details (a different model, a new error message).
+- **Please don't ask "any update?".** Progress shows up in the issue and on the
+  [board](https://github.com/users/cubetes/projects/2).
+- **Questions** go to [Discussions](https://github.com/cubetes/freeMiele/discussions); issues are for
+  concrete work.
+- **Triage:** a clear, reproducible issue gets labels and a priority. An unclear one gets one
+  question and the `waiting for reporter` label; it closes by itself after 21 days without a
+  reply, and reopens whenever you answer.
+- **Priorities:** `P1` = planned for the current milestone; `P3` = welcome, not planned (a good
+  pick for contributors). Anything that could start an appliance unasked or leak a login is fixed
+  first: report those privately (see [SECURITY.md](SECURITY.md)).
+
+## AI-assisted contributions
+
+Using AI tools is fine; this project uses them too. What matters is behaviour:
+
+- Only submit code you understand and can explain in review.
+- Write issue and PR descriptions yourself, briefly; don't paste generated text in place of a
+  discussion.
+- Never claim something was tested or changed if it wasn't.
+
+## Conduct
+
+Everyone here follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Releases and versions
 
 - **Version numbers:** major (`X.0.0`) for big new functionality, minor (`0.X.0`) for improving

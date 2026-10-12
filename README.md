@@ -99,7 +99,8 @@ names are removed. Check the file, then attach it to an
 - Questions and ideas: [Discussions](https://github.com/cubetes/freeMiele/discussions)
 - Small tasks that need no Miele appliance: [good first issues](https://github.com/cubetes/freeMiele/labels/good%20first%20issue)
 - What's planned: the [project board](https://github.com/users/cubetes/projects/2) and [milestones](https://github.com/cubetes/freeMiele/milestones)
-- How we work: [CONTRIBUTING.md](CONTRIBUTING.md)
+- How we work: [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md)
+- Found a security problem? Report it privately: [SECURITY.md](SECURITY.md)
 
 ## Develop
 

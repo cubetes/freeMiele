@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea
+    url: https://github.com/cubetes/freeMiele/discussions
+    about: How do I…? Does my model work? Ideas that aren't a concrete task yet. Ask in Discussions.
+  - name: Security problem
+    url: https://github.com/cubetes/freeMiele/security/advisories/new
+    about: Report privately, never in a public issue.
