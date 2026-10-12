@@ -32,6 +32,9 @@ unpack it, and put `miele` somewhere on your `PATH`. Or, with [Rust](https://rus
 cargo install --git https://github.com/cubetes/freeMiele
 ```
 
+Upgrading from version 0.2 or earlier with Cargo? Run `cargo uninstall freemiele` first: the
+command moved to a new package in 0.3.
+
 On a Mac, a downloaded `miele` is blocked the first time because it isn't signed by Apple. Allow it once
 with `xattr -d com.apple.quarantine miele`.
 
