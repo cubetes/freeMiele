@@ -14,6 +14,7 @@ freemiele = { path = "../core" }
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2", features = ["image-png", "macos-private-api", "tray-icon"] }
+tauri-plugin-notification = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 window-vibrancy = "0.8"

@@ -48,6 +48,9 @@ pub struct State {
     pub elapsed_time: Vec<u32>,
     pub signal_info: bool,
     pub signal_failure: bool,
+    // The door is open; missing on appliances without a door sensor.
+    #[serde(default)]
+    pub signal_door: bool,
     pub remote_enable: RemoteEnable,
     #[serde(rename = "ProgramID", default)]
     pub program_id: Reading,
