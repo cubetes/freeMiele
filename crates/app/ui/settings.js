@@ -92,16 +92,40 @@ $('add').addEventListener('click', () => {
 $('restore').addEventListener('click', async () => { s = await tauri.core.invoke('restore_favourites'); sel = 0; render(); });
 $('s-time').addEventListener('change', (e) => save({ ...s, time_left: e.target.checked }));
 $('s-notify').addEventListener('change', (e) => save({ ...s, washer_alert: e.target.checked }));
+function loggedOut() {
+  $('acc-title').textContent = 'Not logged in';
+  $('acc-sub').textContent = 'Log in to see your appliances.';
+  $('logout').hidden = true;
+  $('login').hidden = false;
+}
+
+// Read the account from Miele; also runs again when a login finishes in the panel.
+function account() {
+  $('logout').hidden = false;
+  $('login').hidden = true;
+  $('acc-title').textContent = 'Logged in to your Miele account';
+  tauri.core.invoke('machine').then((m) => {
+    if (!m) return loggedOut();
+    drinks = m.drinks;
+    $('acc-sub').textContent = m.appliances;
+    render();
+  }).catch((e) => {
+    $('acc-title').textContent = "Can't read your Miele account";
+    $('acc-sub').textContent = String(e);
+  });
+}
+
 $('logout').addEventListener('click', async () => {
   try {
     await tauri.core.invoke('log_out');
-    $('acc-title').textContent = 'Logged out of your Miele account';
-    $('acc-sub').textContent = 'Run `miele login` in Terminal to log in again.';
-    $('logout').hidden = true;
+    drinks = [];
+    loggedOut();
+    render();
   } catch (e) {
     $('acc-sub').textContent = String(e);
   }
 });
+$('login').addEventListener('click', () => tauri.core.invoke('open_login'));
 
 if (tauri) {
   tauri.event.listen('fav', (e) => {
@@ -110,12 +134,6 @@ if (tauri) {
   });
   tauri.event.listen('settings', (e) => { s = e.payload; sel = Math.min(sel, Math.max(0, s.favourites.length - 1)); render(); });
   tauri.core.invoke('settings').then((v) => { s = v; render(); });
-  tauri.core.invoke('machine').then((m) => {
-    drinks = m.drinks;
-    $('acc-sub').textContent = m.appliances;
-    render();
-  }).catch((e) => {
-    $('acc-title').textContent = "Can't read your Miele account";
-    $('acc-sub').textContent = String(e);
-  });
+  tauri.event.listen('account', account);
+  account();
 }

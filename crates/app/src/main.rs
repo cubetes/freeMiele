@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 use settings::Settings;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, MenuItemBuilder, PredefinedMenuItem};
@@ -41,6 +41,8 @@ struct Card {
     progress: Option<u8>,
     /// Set when the page should draw the coffee controls.
     coffee: Option<Coffee>,
+    /// Set when the page should draw the login form.
+    login: bool,
 }
 
 #[derive(Serialize, Clone, PartialEq, Debug)]
@@ -94,8 +96,10 @@ struct Panel {
     cards: Mutex<Vec<Card>>,
     /// Menu-bar text with and without the time left; the Settings switch picks one.
     titles: Mutex<[String; 2]>,
-    /// The user logged out in Settings: ignore what the old live connection still sends.
-    logged_out: AtomicBool,
+    /// Which live connection is current. Logging out or in starts a new one; an old one is ignored.
+    generation: AtomicUsize,
+    /// Set to stop the login that is waiting for the browser; None when none is.
+    login: Mutex<Option<Arc<AtomicBool>>>,
     /// The "…" menu is open: the panel loses focus but must stay.
     menu_open: AtomicBool,
     /// When the panel last hid itself, so the click on the icon that caused it doesn't reopen it.
@@ -197,6 +201,7 @@ fn card(id: &str, d: &Device) -> Card {
         sub,
         progress,
         coffee,
+        login: false,
     }
 }
 
@@ -269,6 +274,7 @@ fn offline_card(message: String) -> Card {
         sub: Some(message),
         progress: None,
         coffee: None,
+        login: false,
     }
 }
 
@@ -286,13 +292,34 @@ fn washer_alert(
     (notify, (finished, dot))
 }
 
+/// The card that asks for the keys when there is no saved login.
+fn login_card() -> Card {
+    Card {
+        label: "freeMiele".into(),
+        tone: "attention",
+        chip: "Login needed".into(),
+        title: "Log in to Miele".into(),
+        sub: None,
+        progress: None,
+        coffee: None,
+        login: true,
+    }
+}
+
+// lean: an old connection after logout or a new login is only ignored, not stopped (core's watch
+// never returns); it retries quietly every minute. Add a way to stop it if that ever matters.
 fn watch(app: AppHandle) {
+    let mine = app
+        .state::<Panel>()
+        .generation
+        .fetch_add(1, Ordering::SeqCst)
+        + 1;
     match Session::load() {
         Ok(mut session) => {
             // Per washer: was it finished at the last update, and is its dot showing.
             let mut seen: HashMap<String, (bool, bool)> = HashMap::new();
             freemiele::watch(&mut session, move |devices, _| {
-                if app.state::<Panel>().logged_out.load(Ordering::SeqCst) {
+                if app.state::<Panel>().generation.load(Ordering::SeqCst) != mine {
                     return;
                 }
                 let offline = devices
@@ -331,13 +358,13 @@ fn watch(app: AppHandle) {
                 show(&app, cards, titles, offline, dot);
             })
         }
-        Err(e) => show(
-            &app,
-            vec![offline_card(e.to_string())],
-            Default::default(),
-            true,
-            false,
-        ),
+        Err(e) => {
+            let card = match e.to_string() {
+                m if m == NOT_LOGGED_IN => login_card(),
+                m => offline_card(m),
+            };
+            show(&app, vec![card], Default::default(), true, false);
+        }
     }
 }
 
@@ -543,8 +570,9 @@ struct Machine {
 }
 
 /// What the Settings window needs from Miele: the appliance line and the drinks to add.
+/// None: there is no saved login.
 #[tauri::command]
-async fn machine() -> Result<Machine, String> {
+async fn machine() -> Result<Option<Machine>, String> {
     miele(|token| {
         let devices: Devices = get(token, "/devices")?;
         let coffee = sorted(&devices)
@@ -554,12 +582,13 @@ async fn machine() -> Result<Machine, String> {
             Some((id, _)) => get(token, &format!("/devices/{id}/programs")).unwrap_or_default(),
             None => vec![],
         };
-        Ok(Machine {
+        Ok(Some(Machine {
             appliances: appliances_line(&devices),
             drinks: drinks_of(&programs, &[]).all,
-        })
+        }))
     })
     .await
+    .or_else(|e| if e == NOT_LOGGED_IN { Ok(None) } else { Err(e) })
 }
 
 /// Log out (core does the work), then show the logged-out card.
@@ -569,16 +598,92 @@ async fn log_out(app: AppHandle) -> Result<(), String> {
         .await
         .map_err(|e| e.to_string())??;
     app.state::<Panel>()
-        .logged_out
-        .store(true, Ordering::SeqCst);
-    show(
-        &app,
-        vec![offline_card(NOT_LOGGED_IN.into())],
-        Default::default(),
-        true,
-        false,
-    );
+        .generation
+        .fetch_add(1, Ordering::SeqCst);
+    show(&app, vec![login_card()], Default::default(), true, false);
     Ok(())
+}
+
+/// Log in: open Miele's sign-in in the browser, wait for it off the main thread, save the login
+/// (the same Keychain entry as the `miele` command) and start the live connection.
+/// The secret goes nowhere but the Keychain.
+#[tauri::command]
+async fn log_in(
+    app: AppHandle,
+    panel: State<'_, Panel>,
+    client_id: String,
+    client_secret: String,
+) -> Result<(), String> {
+    let (client_id, client_secret) = (
+        client_id.trim().to_string(),
+        client_secret.trim().to_string(),
+    );
+    if client_id.is_empty() || client_secret.is_empty() {
+        return Err("Enter both the client ID and the client secret.".into());
+    }
+    let cancel = Arc::new(AtomicBool::new(false));
+    {
+        let mut waiting = panel.login.lock().unwrap();
+        if waiting.is_some() {
+            return Err("Another login is already waiting. Close it and try again.".into());
+        }
+        *waiting = Some(cancel.clone());
+    }
+    let done = tauri::async_runtime::spawn_blocking(move || {
+        let code = freemiele::wait_for_login(
+            &client_id,
+            |url| {
+                std::process::Command::new("open")
+                    .arg(url.as_str())
+                    .status()?;
+                Ok(())
+            },
+            &cancel,
+        )
+        .map_err(|e| e.to_string())?;
+        Session::login(client_id, client_secret, &code)
+            .map_err(|e| {
+                format!(
+                    "Miele didn't accept that client ID or secret. Check them and try again. ({e})"
+                )
+            })?
+            .save()
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())
+    .and_then(|r| r);
+    *panel.login.lock().unwrap() = None;
+    done?;
+    let _ = app.emit("account", ());
+    std::thread::spawn(move || watch(app));
+    Ok(())
+}
+
+/// The README steps for getting the keys, in the browser.
+#[tauri::command]
+fn open_keys_help() {
+    let _ = std::process::Command::new("open")
+        .arg("https://github.com/cubetes/freeMiele#before-you-start-get-your-miele-keys-5-minutes")
+        .status();
+}
+
+#[tauri::command]
+fn cancel_login(panel: State<Panel>) {
+    if let Some(cancel) = &*panel.login.lock().unwrap() {
+        cancel.store(true, Ordering::SeqCst);
+    }
+}
+
+/// Settings > Log in: show the panel under the tray icon, where the login form is.
+#[tauri::command]
+fn open_login(app: AppHandle) {
+    let hidden = app
+        .get_webview_window("main")
+        .is_some_and(|w| !w.is_visible().unwrap_or(false));
+    if let (true, Some(Ok(Some(rect)))) = (hidden, app.tray_by_id("main").map(|t| t.rect())) {
+        toggle(&app, rect);
+    }
 }
 
 /// Open the panel centred under the tray icon, or close it.
@@ -650,7 +755,11 @@ fn main() {
             save_settings,
             restore_favourites,
             machine,
-            log_out
+            log_out,
+            log_in,
+            cancel_login,
+            open_keys_help,
+            open_login
         ])
         .on_menu_event(|app, event| match event.id().0.split_once(':') {
             Some((kind, id)) => {

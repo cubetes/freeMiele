@@ -4,9 +4,8 @@ use freemiele::{
     Actions, CARE_SCHEDULE, COFFEE_MACHINE, Devices, FillingLevels, Outcome, Program, Result,
     Session, care_line, choose, get, name,
 };
-use std::hash::{BuildHasher, RandomState};
-use std::io::{BufRead, BufReader, Write};
-use std::net::TcpListener;
+use std::io::Write;
+use std::sync::atomic::AtomicBool;
 
 #[derive(Parser)]
 #[command(
@@ -305,40 +304,17 @@ fn login() -> Result<()> {
     std::io::stdin().read_line(&mut client_id)?;
     let client_secret = rpassword::prompt_password("Client secret (hidden): ")?;
 
-    // Random value that ties the browser's answer to this login attempt.
-    let state = format!("{:x}", RandomState::new().hash_one(std::process::id()));
-    let listener = TcpListener::bind("127.0.0.1:8765")?;
-    let url = freemiele::login_url(client_id.trim(), &state);
-    println!("Log in to Miele in your browser. If it doesn't open, visit:\n{url}");
-    std::process::Command::new("open")
-        .arg(url.as_str())
-        .status()?;
-
-    // Wait for the browser to come back with the login code; ignore stray requests (favicon etc).
-    let code = loop {
-        let (mut stream, _) = listener.accept()?;
-        let mut line = String::new();
-        BufReader::new(&stream).read_line(&mut line)?;
-        if !line.contains("state=") {
-            stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")?;
-            continue;
-        }
-        let code = freemiele::code_from_request(&line, &state);
-        let msg = if code.is_some() {
-            "Logged in. You can close this tab."
-        } else {
-            "Login failed. Check the terminal."
-        };
-        write!(
-            stream,
-            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{msg}",
-            msg.len()
-        )?;
-        break code.ok_or(format!(
-            "Miele did not return a login code. Browser said: {}",
-            line.trim()
-        ))?;
-    };
+    let code = freemiele::wait_for_login(
+        client_id.trim(),
+        |url| {
+            println!("Log in to Miele in your browser. If it doesn't open, visit:\n{url}");
+            std::process::Command::new("open")
+                .arg(url.as_str())
+                .status()?;
+            Ok(())
+        },
+        &AtomicBool::new(false),
+    )?;
 
     Session::login(client_id.trim().to_string(), client_secret, &code)?.save()?;
     println!("Logged in. Try `miele status`.");
