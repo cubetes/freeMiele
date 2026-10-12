@@ -1,10 +1,9 @@
 use clap::{Parser, Subcommand};
 use freemiele::dataact::{self, Appliance, Consumption, Refused, Run};
 use freemiele::{
-    Actions, CARE_SCHEDULE, COFFEE_MACHINE, Device, Devices, FillingLevels, NOT_LOGGED_IN, Program,
-    Rejected, Request, Result, Session, care_line, choose, confirmed, get, name, put,
+    Actions, CARE_SCHEDULE, COFFEE_MACHINE, Devices, FillingLevels, NOT_LOGGED_IN, Outcome,
+    Program, Result, Session, care_line, choose, get, name,
 };
-use serde_json::json;
 use std::hash::{BuildHasher, RandomState};
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
@@ -223,41 +222,16 @@ fn power(on: bool, device: Option<&str>) -> Result<()> {
         .into());
     }
     let (id, d) = choose(&candidates, device)?;
-    let key = if on { "powerOn" } else { "powerOff" };
-    let request = if on { Request::On } else { Request::Off };
-    let note = command(&token, id, "actions", json!({ key: true }), request)?;
-    println!("{}: turning {}.", name(d), if on { "on" } else { "off" });
-    if note {
-        println!(
-            "(Miele reported a server error, but the machine is {}.)",
-            if on { "on" } else { "off" }
-        );
+    let word = if on { "on" } else { "off" };
+    let outcome = freemiele::power(&token, id, on)?;
+    if outcome == Outcome::NotConfirmed {
+        return Err(format!("The machine didn't turn {word}. Check its display.").into());
+    }
+    println!("{}: turning {word}.", name(d));
+    if outcome == Outcome::DoneDespiteServerError {
+        println!("(Miele reported a server error, but the machine is {word}.)");
     }
     Ok(())
-}
-
-/// Sends a command. Miele sometimes answers 5xx for one that worked, so after a 5xx we
-/// re-read the machine. Ok(true) = it did what was asked despite the error.
-fn command(
-    token: &str,
-    id: &str,
-    what: &str,
-    body: serde_json::Value,
-    request: Request,
-) -> Result<bool> {
-    let path = format!("/devices/{id}");
-    let Err(e) = put(token, &format!("{path}/{what}"), body) else {
-        return Ok(false);
-    };
-    if !matches!(e.downcast_ref::<Rejected>(), Some(r) if r.0.is_server_error()) {
-        return Err(e);
-    }
-    // lean: one fixed 2 s wait before re-reading; add a short retry if slow machines report false errors.
-    std::thread::sleep(std::time::Duration::from_secs(2));
-    match get::<Device>(token, &path) {
-        Ok(d) if confirmed(request, &d.state) => Ok(true),
-        _ => Err(e),
-    }
 }
 
 fn brew(device: Option<&str>, drink: &str) -> Result<()> {
@@ -297,15 +271,12 @@ fn brew(device: Option<&str>, drink: &str) -> Result<()> {
         )
         .into());
     }
-    let note = command(
-        &token,
-        id,
-        "programs",
-        json!({ "programId": p.program_id }),
-        Request::Brew,
-    )?;
+    let outcome = freemiele::brew(&token, id, p.program_id)?;
+    if outcome == Outcome::NotConfirmed {
+        return Err("The machine didn't start the drink. Check its display: water tank, beans or drip tray.".into());
+    }
     println!("{}: making {}.", name(d), p.program);
-    if note {
+    if outcome == Outcome::DoneDespiteServerError {
         println!("(Miele reported a server error, but the machine started the drink.)");
     }
     Ok(())

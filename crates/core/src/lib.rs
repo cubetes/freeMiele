@@ -124,7 +124,7 @@ pub enum Request {
     Brew,
 }
 
-/// After a 5xx reply, did the machine do what was asked? On: not Off (1) and not Not connected (255).
+/// Did the machine do what was asked? On: not Off (1) and not Not connected (255).
 /// Off: Off (1). Brew: In use (5).
 pub fn confirmed(request: Request, state_after: &State) -> bool {
     let status = state_after.status.value_raw;
@@ -225,6 +225,86 @@ fn redact_long_numbers(s: &str) -> String {
     out
 }
 
+/// How a power or brew command ended, judged by what the machine reports, not by Miele's reply.
+#[derive(Debug, PartialEq)]
+pub enum Outcome {
+    Done,
+    /// Miele answered 5xx, but the machine did it.
+    DoneDespiteServerError,
+    /// Miele answered, but the machine never showed the change (e.g. empty water tank).
+    NotConfirmed,
+}
+
+/// Wait for the machine to show the change: `states` are readings taken in turn, newest last.
+fn decide(
+    request: Request,
+    server_error: bool,
+    states: impl IntoIterator<Item = State>,
+) -> Outcome {
+    match (
+        states.into_iter().any(|s| confirmed(request, &s)),
+        server_error,
+    ) {
+        (true, false) => Outcome::Done,
+        (true, true) => Outcome::DoneDespiteServerError,
+        (false, _) => Outcome::NotConfirmed,
+    }
+}
+
+// Miele's state lags a command, so re-read every 2 s.
+const POLL_EVERY: Duration = Duration::from_secs(2);
+// Drinks start slowly (heating, grinding); power changes show sooner.
+const BREW_WAIT: Duration = Duration::from_secs(15);
+const POWER_WAIT: Duration = Duration::from_secs(10);
+
+/// Sends a command, then polls the machine until it shows the change or `wait` runs out.
+/// Miele may answer 2xx for a command that did nothing, or 5xx for one that worked.
+/// A 4xx is an immediate refusal.
+// lean: polling; the live stream (`Sse`) could confirm instead if the polling load matters.
+fn command(
+    token: &str,
+    id: &str,
+    what: &str,
+    body: serde_json::Value,
+    request: Request,
+    wait: Duration,
+) -> Result<Outcome> {
+    let path = format!("/devices/{id}");
+    let server_error = match put(token, &format!("{path}/{what}"), body) {
+        Ok(()) => false,
+        Err(e) if matches!(e.downcast_ref::<Rejected>(), Some(r) if r.0.is_server_error()) => true,
+        Err(e) => return Err(e),
+    };
+    let readings = (0..wait.as_secs() / POLL_EVERY.as_secs()).filter_map(|_| {
+        std::thread::sleep(POLL_EVERY);
+        get::<Device>(token, &path).ok().map(|d| d.state)
+    });
+    Ok(decide(request, server_error, readings))
+}
+
+/// Turn a device on or off.
+pub fn power(token: &str, id: &str, on: bool) -> Result<Outcome> {
+    let (key, request) = if on {
+        ("powerOn", Request::On)
+    } else {
+        ("powerOff", Request::Off)
+    };
+    command(
+        token,
+        id,
+        "actions",
+        serde_json::json!({ key: true }),
+        request,
+        POWER_WAIT,
+    )
+}
+
+/// Start a drink.
+pub fn brew(token: &str, id: &str, program_id: u32) -> Result<Outcome> {
+    let body = serde_json::json!({ "programId": program_id });
+    command(token, id, "programs", body, Request::Brew, BREW_WAIT)
+}
+
 /// Case-insensitive match on the program name, e.g. "flat white" -> "Flat white".
 /// Never matches an empty name: the API lists a nameless program that must not start by accident.
 pub fn find_program<'a>(programs: &'a [Program], name: &str) -> Option<&'a Program> {
@@ -291,6 +371,18 @@ pub fn choose<'a>(
         )
         .into()),
     }
+}
+
+/// Programme code a coffee machine reports while its display asks for care, e.g. "empty the drip
+/// tray" (Home Assistant: `check_appliance`). Seen on a CM 6160 with `signalInfo` still false.
+const CHECK_APPLIANCE: i64 = 17004;
+
+/// The appliance's display is asking for something: the official info flag, or a coffee machine
+/// sitting on its "check appliance" code.
+pub fn needs_attention(d: &Device) -> bool {
+    d.state.signal_info
+        || (d.ident.kind.value_raw == COFFEE_MACHINE
+            && d.state.program_id.value_raw == Some(CHECK_APPLIANCE))
 }
 
 // Codes from Home Assistant's Miele integration (Apache-2.0): homeassistant/components/miele/const.py
@@ -404,8 +496,8 @@ pub fn status_line(d: &Device) -> String {
     }
     if d.state.signal_failure {
         line += " — FAULT";
-    } else if d.state.signal_info {
-        line += " — needs attention (water, beans, tray or care)";
+    } else if needs_attention(d) {
+        line += " — needs attention: check the machine's display";
     }
     line
 }
@@ -725,6 +817,35 @@ mod tests {
     }
 
     #[test]
+    fn decide_waits_for_the_machine() {
+        let seen = |codes: &[i64]| codes.iter().map(|&c| after(c)).collect::<Vec<_>>();
+        // Machine on, drink never starts (empty tank): not confirmed, whatever Miele replied.
+        assert_eq!(
+            decide(Request::Brew, false, seen(&[2, 2, 2])),
+            Outcome::NotConfirmed
+        );
+        assert_eq!(
+            decide(Request::Brew, true, seen(&[2, 2])),
+            Outcome::NotConfirmed
+        );
+        assert_eq!(
+            decide(Request::Brew, false, seen(&[])),
+            Outcome::NotConfirmed
+        );
+        // Changes later on count.
+        assert_eq!(decide(Request::Brew, false, seen(&[2, 5])), Outcome::Done);
+        assert_eq!(
+            decide(Request::Brew, true, seen(&[2, 5])),
+            Outcome::DoneDespiteServerError
+        );
+        assert_eq!(decide(Request::On, false, seen(&[1, 1, 2])), Outcome::Done);
+        assert_eq!(
+            decide(Request::Off, true, seen(&[2, 1])),
+            Outcome::DoneDespiteServerError
+        );
+    }
+
+    #[test]
     fn confirmed_checks_what_the_machine_did() {
         for (request, status, want) in [
             (Request::On, 2, true),
@@ -793,13 +914,26 @@ mod tests {
     }
 
     #[test]
+    fn check_appliance_code_needs_attention() {
+        let mut devices: Devices =
+            serde_json::from_str(include_str!("../../../fixtures/devices.sample.json")).unwrap();
+        let d = devices.get_mut("000123456789").unwrap();
+        d.state.signal_info = false;
+        d.state.status.value_raw = 2;
+        assert!(!needs_attention(d));
+        d.state.program_id.value_raw = Some(17004);
+        assert!(needs_attention(d));
+        assert!(status_line(d).contains("needs attention"));
+    }
+
+    #[test]
     fn parses_sample_and_prints_status() {
         let devices: Devices =
             serde_json::from_str(include_str!("../../../fixtures/devices.sample.json")).unwrap();
         let d = &devices["000123456789"];
         assert_eq!(
             status_line(d),
-            "CM6160 Coffee Machine: Off (mobile start off) — needs attention (water, beans, tray or care)"
+            "CM6160 Coffee Machine: Off (mobile start off) — needs attention: check the machine's display"
         );
     }
 
