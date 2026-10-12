@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuItem, MenuItemBuilder};
+use tauri::menu::{Menu, MenuItem, MenuItemBuilder, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{
     AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Rect, State, WebviewWindow,
@@ -370,9 +370,18 @@ fn fit(window: WebviewWindow, height: f64) {
 /// The "…" button: a native menu under the pointer.
 #[tauri::command]
 fn more(window: WebviewWindow, app: AppHandle, panel: State<Panel>) -> tauri::Result<()> {
+    // Greyed-out line, so bug reports can say which build is running.
+    let version = MenuItem::with_id(
+        &app,
+        "version",
+        format!("freeMiele {}", env!("CARGO_PKG_VERSION")),
+        false,
+        None::<&str>,
+    )?;
+    let line = PredefinedMenuItem::separator(&app)?;
     let quit = MenuItem::with_id(&app, "quit", "Quit freeMiele", true, Some("Cmd+Q"))?;
     panel.menu_open.store(true, Ordering::SeqCst);
-    let shown = window.popup_menu(&Menu::with_items(&app, &[&quit])?);
+    let shown = window.popup_menu(&Menu::with_items(&app, &[&version, &line, &quit])?);
     panel.menu_open.store(false, Ordering::SeqCst);
     shown
 }
