@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand};
 use freemiele::dataact::{self, Appliance, Consumption, Refused, Run};
 use freemiele::{
-    Actions, CARE_SCHEDULE, COFFEE_MACHINE, Devices, FillingLevels, NOT_LOGGED_IN, Outcome,
-    Program, Result, Session, care_line, choose, get, name,
+    Actions, CARE_SCHEDULE, COFFEE_MACHINE, Devices, FillingLevels, Outcome, Program, Result,
+    Session, care_line, choose, get, name,
 };
 use std::hash::{BuildHasher, RandomState};
 use std::io::{BufRead, BufReader, Write};
@@ -287,26 +287,14 @@ fn brew(device: Option<&str>, drink: &str) -> Result<()> {
 }
 
 fn logout() -> Result<()> {
-    let session = match Session::load() {
-        Ok(s) => s,
-        // No entry, or one too damaged to read: clear it. A refused Keychain access is reported.
-        // lean: "no entry" is matched by message text; use an error enum if load gets more cases.
-        Err(e) if e.is::<serde_json::Error>() || e.to_string() == NOT_LOGGED_IN => {
-            Session::forget()?;
-            println!("Not logged in.");
-            return Ok(());
+    println!(
+        "{}",
+        if freemiele::logout()? {
+            "Logged out."
+        } else {
+            "Not logged in."
         }
-        Err(e) => return Err(e),
-    };
-    let at_miele = session.end_at_miele();
-    Session::forget()?; // delete locally even if Miele failed
-    if let Err(e) = at_miele {
-        return Err(format!(
-            "Deleted the local login, but Miele did not confirm the logout ({e})."
-        )
-        .into());
-    }
-    println!("Logged out.");
+    );
     Ok(())
 }
 

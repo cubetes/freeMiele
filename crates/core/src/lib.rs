@@ -806,6 +806,29 @@ impl Session {
     }
 }
 
+/// Log out: end the session at Miele and delete the saved login. `Ok(false)`: there was none.
+pub fn logout() -> Result<bool> {
+    let session = match Session::load() {
+        Ok(s) => s,
+        // No entry, or one too damaged to read: clear it. A refused Keychain access is reported.
+        // lean: "no entry" is matched by message text; use an error enum if load gets more cases.
+        Err(e) if e.is::<serde_json::Error>() || e.to_string() == NOT_LOGGED_IN => {
+            Session::forget()?;
+            return Ok(false);
+        }
+        Err(e) => return Err(e),
+    };
+    let at_miele = session.end_at_miele();
+    Session::forget()?; // delete locally even if Miele failed
+    if let Err(e) = at_miele {
+        return Err(format!(
+            "Deleted the local login, but Miele did not confirm the logout ({e})."
+        )
+        .into());
+    }
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

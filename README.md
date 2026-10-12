@@ -93,8 +93,10 @@ in before Lithium 0.3.1, run `miele login` once more so it asks for the Data Act
 
 ## Mac app (preview)
 
-A menu-bar app that shows what your appliances are doing, live. It is read-only for now: no
-buttons yet. It uses the same login as the `miele` command, so run `miele login` first. Then:
+A menu-bar app that shows what your appliances are doing, live. On the coffee machine it can
+brew your favourite drinks and turn it on or off. Settings (in the "…" menu) lets you choose and
+order the favourites, hide the time left in the menu bar and log out. It uses the same login as
+the `miele` command, so run `miele login` first. Then:
 
 ```sh
 cargo run -p freemiele-app
