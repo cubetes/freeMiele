@@ -38,9 +38,10 @@ The starting point is Miele's brand red, approximately `#8C0014` (hue 351°, ver
 ## Colour in use
 
 - Body copy: `ink` on `surface` or `surface-raised`. Secondary text: `ink-muted`.
-- Primary button: `brand` fill, `on-brand` label, `radius-sm`. Secondary button: `surface-raised` fill, `line` border plus `ink` label.
+- Primary button: `brand` fill, `on-brand` label, `radius-sm`. Secondary button: `surface-raised` fill, `line-strong` border plus `ink` label.
+- Control edges (buttons, inputs, pickers) use `line-strong`, never `line` alone. `line` is for dividers and card borders.
 - Appliance states always pair a colour with a word, so colour-blind users lose nothing:
-  - Ready → `brand` · Running / brewing → `crema` · Needs attention, Mobile start off → `attention` · Fault → `fault` · Off, Not connected → `ink-muted`.
+  - Ready, Finished → `brand` · Running / brewing → `crema` · Needs attention, Mobile start off → `attention` · Fault → `fault` · Off, Not connected → `ink-muted`.
 - Focus: a 2px solid `focus` ring with 2px offset on every interactive element.
 
 ## Type
@@ -48,7 +49,8 @@ The starting point is Miele's brand red, approximately `#8C0014` (hue 351°, ver
 - `display` family (Schibsted Grotesk) for the `display`, `heading` and `title` styles: sturdy, slightly engraved, like a control panel label.
 - `body` family (Atkinson Hyperlegible Next) for `body`, `small` and `label`. Chosen for legibility: the project should be easy to read for everyone.
 - `mono` family (JetBrains Mono) for `code`. freeMiele starts in the terminal, so commands are first-class content: show them in `code` on `surface-raised` with `radius-sm`.
-- Fonts are free Google Fonts. Load them from Google Fonts; the fallbacks in each family are safe.
+- Atkinson Hyperlegible Next draws its zero with a slash. Set digits 0–9 in Schibsted Grotesk with tabular figures: add a `unicode-range: U+0030-0039` face for the `display` family ahead of `body`, and turn on `font-variant-numeric: tabular-nums`.
+- Fonts are free Google Fonts. Apps bundle the font files and never load Google Fonts at runtime; the fallbacks in each family are safe.
 
 ## Writing
 
@@ -63,6 +65,13 @@ The starting point is Miele's brand red, approximately `#8C0014` (hue 351°, ver
 - Corners: `radius-sm` for anything you press (crisp, like touch keys), `radius-md` for cards, `radius-pill` for status chips only.
 - Borders before shadows: separate panels with `line`, not drop shadows.
 - Layout: one appliance per card, its state chip top-right, its main action bottom-right.
+
+## Mac app
+
+- One glass layer: the panel, with native vibrancy. Everything inside is a solid `surface-raised` card on it, never glass on glass.
+- Concentric radii: panel 20, inset 8, cards 12 (`radius-md`), controls 8 (the `radius-sm` Mac exception).
+- The menu-bar item is a template image (the system tints it), with the appliance status as text beside it.
+- Reduce Transparency on: the panel becomes solid `surface`.
 
 ## Iconography
 
