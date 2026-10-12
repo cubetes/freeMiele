@@ -101,6 +101,37 @@ pub fn get<T: DeserializeOwned>(token: &str, path: &str) -> Result<T> {
         .json()?)
 }
 
+/// Miele answered a command with an HTTP error status. Shown as "Miele refused (500 …): <Miele's message>".
+#[derive(Debug)]
+pub struct Rejected(pub reqwest::StatusCode, pub String);
+
+impl std::fmt::Display for Rejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "Miele refused ({}): {}", self.0, self.1)
+    }
+}
+
+impl std::error::Error for Rejected {}
+
+/// A command that Miele may answer with a false server error: see `confirmed`.
+#[derive(Clone, Copy)]
+pub enum Request {
+    On,
+    Off,
+    Brew,
+}
+
+/// After a 5xx reply, did the machine do what was asked? On: not Off (1) and not Not connected (255).
+/// Off: Off (1). Brew: In use (5).
+pub fn confirmed(request: Request, state_after: &State) -> bool {
+    let status = state_after.status.value_raw;
+    match request {
+        Request::On => ![1, 255].contains(&status),
+        Request::Off => status == 1,
+        Request::Brew => status == 5,
+    }
+}
+
 pub fn put(token: &str, path: &str, body: serde_json::Value) -> Result<()> {
     let reply = reqwest::blocking::Client::new()
         .put(format!("{API}{path}"))
@@ -110,7 +141,7 @@ pub fn put(token: &str, path: &str, body: serde_json::Value) -> Result<()> {
     let status = reply.status();
     if !status.is_success() {
         // Miele explains refusals in the body, e.g. why a program can't start now.
-        return Err(format!("Miele refused ({status}): {}", reply.text()?).into());
+        return Err(Rejected(status, reply.text()?).into());
     }
     Ok(())
 }
@@ -337,9 +368,9 @@ pub fn status_line(d: &Device) -> String {
         WASHING_MACHINE | TUMBLE_DRYER | WASHER_DRYER => Some((|_| None, |_| None)),
         _ => None,
     };
-    // 0 = Off, 255 = Not connected
+    // 1 = Off (0 is unused but treated the same), 255 = Not connected
     if let Some((program_name, phase_name)) = names
-        && ![0, 255].contains(&status)
+        && ![0, 1, 255].contains(&status)
         && let Some(program) = reading_text(&d.state.program_id, program_name)
     {
         line += &format!(", {program}");
@@ -665,6 +696,32 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn after(status: i64) -> State {
+        serde_json::from_value(serde_json::json!({
+            "status": {"value_raw": status, "value_localized": ""},
+            "remainingTime": [0, 0], "signalInfo": false, "signalFailure": false,
+            "remoteEnable": {"fullRemoteControl": true, "mobileStart": false}
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn confirmed_checks_what_the_machine_did() {
+        for (request, status, want) in [
+            (Request::On, 2, true),
+            (Request::On, 5, true),
+            (Request::On, 1, false),
+            (Request::On, 255, false),
+            (Request::Off, 1, true),
+            (Request::Off, 2, false),
+            (Request::Brew, 5, true),
+            (Request::Brew, 2, false),
+            (Request::Brew, 1, false),
+        ] {
+            assert_eq!(confirmed(request, &after(status)), want, "{status}");
+        }
+    }
 
     #[test]
     fn dump_strips_serials_and_names() {

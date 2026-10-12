@@ -73,6 +73,8 @@ miele dump             # raw appliance data for a support report, serial numbers
 miele logout           # ends the login at Miele and deletes it from this computer
 ```
 
+Miele's server sometimes reports an error for a command that worked; freeMiele checks the machine and tells you what really happened.
+
 **Coffee:** put a cup under the spout before `brew`, because the machine starts straight away.
 Miele only allows a remote drink when **Mobile Start** is on at the machine, and it switches off
 after each drink. `status` shows "(mobile start off)" when it's needed. Options like DoubleShot or
