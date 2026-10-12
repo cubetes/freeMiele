@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>freeMiele Settings</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="settings.css">
+</head>
+<body>
+<main class="body">
+  <section aria-labelledby="s-fav">
+    <h2 class="sh" id="s-fav">Favourite drinks</h2>
+    <div class="box">
+      <ol id="favs" role="listbox" aria-labelledby="s-fav" aria-description="Drag to reorder, or select a drink and press Option-Command-Up or Down."></ol>
+      <div class="foot">
+        <button type="button" id="add" class="btn" aria-haspopup="menu"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add drink</button>
+        <span id="count" class="sub2 grow" role="status"></span>
+        <button type="button" id="restore" class="btn">Restore defaults</button>
+      </div>
+    </div>
+    <p class="cap">Shown in the panel in this order. Drag to reorder.</p>
+  </section>
+
+  <section aria-labelledby="s-mb">
+    <h2 class="sh" id="s-mb">Menu bar and alerts</h2>
+    <div class="box">
+      <div class="srow tall"><label for="s-time" class="grow">Show time left in the menu bar</label><input type="checkbox" role="switch" id="s-time" class="switch"></div>
+      <div class="srow tall"><label for="s-notify" class="grow"><span>Alert when the washer finishes</span><span class="sub2">A notification, and a dot on the icon until the door opens.</span></label><input type="checkbox" role="switch" id="s-notify" class="switch"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-acc">
+    <h2 class="sh" id="s-acc">Account</h2>
+    <div class="box"><div class="srow tall"><span class="grow acc"><span id="acc-title">Logged in to your Miele account</span><span id="acc-sub" class="sub2" role="status"></span></span><button type="button" id="logout" class="btn">Log out</button></div></div>
+  </section>
+
+  <footer class="about">
+    <svg width="16" height="16" viewBox="0 0 120 120" aria-hidden="true"><rect width="120" height="120" rx="28" fill="#0b6b62"/><path d="M29.6 90.4 A43 43 0 0 1 90.4 29.6" fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round"/><circle cx="60" cy="60" r="24" fill="#a9521c"/><path d="M60 60 L74 46" fill="none" stroke="#ffffff" stroke-width="14" stroke-linecap="round"/></svg>
+    <span><b>freeMiele</b> · Unofficial. Not made or endorsed by Miele.</span>
+  </footer>
+</main>
+<script src="settings.js"></script>
+</body>
+</html>

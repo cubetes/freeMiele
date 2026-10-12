@@ -82,7 +82,7 @@ function coffeeControls(card, c) {
     const other = chosen && !menu.favourites.some((d) => d.id === chosen.id);
     const more = button((other ? TICK + escape(chosen.name) : 'Other drink') + UPDOWN, 'pick more', () => {
       menuFor = id;
-      tauri?.core.invoke('other_drinks', { drinks: menu.all });
+      tauri?.core.invoke('other_drinks', { drinks: menu.all, event: 'drink' });
     });
     more.setAttribute('aria-haspopup', 'menu');
     if (other) more.setAttribute('aria-pressed', true);
@@ -157,5 +157,7 @@ if (tauri) {
     const d = drinks.get(menuFor)?.all.find((d) => String(d.id) === e.payload);
     if (d) { picked.set(menuFor, d); render(last); }
   });
+  // Favourites changed in Settings: fetch the drinks again.
+  tauri.event.listen('settings', () => { drinks.clear(); render(last); });
   tauri.core.invoke('cards').then(render);
 }
