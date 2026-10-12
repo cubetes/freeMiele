@@ -122,7 +122,7 @@ names are removed. Check the file, then attach it to an
 ## Support
 
 freeMiele is free and made in spare time. If it saves you a trip to the coffee machine, you can
-[buy me a coffee](https://buymeacoffee.com/cubetes). Reports from new appliance models help just as much.
+[buy me a coffee](https://buymeacoffee.com/cubetes) or support it on [Ko-fi](https://ko-fi.com/cubetes). Reports from new appliance models help just as much.
 
 ## Develop
 
