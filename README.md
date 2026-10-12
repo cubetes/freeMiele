@@ -96,11 +96,23 @@ in before Lithium 0.3.1, run `miele login` once more so it asks for the Data Act
 A menu-bar app that shows what your appliances are doing, live. On the coffee machine it can
 brew your favourite drinks and turn it on or off. Settings (in the "…" menu) lets you choose and
 order the favourites, hide the time left in the menu bar and log out. It uses the same login as
-the `miele` command, so run `miele login` first. Then:
+the `miele` command, so run `miele login` first.
+
+**Install the app.** Download `freeMiele-…-macos.zip` from the
+[latest release](https://github.com/cubetes/freeMiele/releases/latest), unzip it and drag
+`freeMiele.app` to Applications. It works on Apple silicon and Intel Macs.
+
+The app is not signed by Apple, so macOS will not open it the first time. Right-click it, choose
+Open, then Open again. Or run once: `xattr -d com.apple.quarantine /Applications/freeMiele.app`.
+
+With Homebrew (once the tap is live):
 
 ```sh
-cargo run -p freemiele-app
+brew install --cask cubetes/freemiele/freemiele   # the app
+brew install cubetes/freemiele/miele               # the command
 ```
+
+To run it from the source instead: `cargo run -p freemiele-app`.
 
 macOS asks once to let it read the saved login; click Always Allow.
 
