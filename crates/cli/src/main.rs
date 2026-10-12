@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use freemiele::dataact::{self, Appliance, Consumption, Refused, Run};
 use freemiele::{
     Actions, CARE_SCHEDULE, COFFEE_MACHINE, Devices, FillingLevels, NOT_LOGGED_IN, Program, Result,
     Session, care_line, choose, get, name, put,
@@ -27,6 +28,12 @@ enum Cmd {
     Watch,
     /// How often your coffee machine has been cleaned, and the care schedule
     Care,
+    /// Water and energy use per week and month (needs Miele's Data Act access)
+    Usage {
+        /// Show the latest runs instead
+        #[arg(long)]
+        runs: bool,
+    },
     /// Turn on the appliance that can be turned on (e.g. the coffee machine)
     On {
         /// Which appliance, by name or model (e.g. CM6160); needed if several qualify
@@ -78,6 +85,7 @@ fn run(cmd: Cmd) -> Result<()> {
             })
         }
         Cmd::Care => care(),
+        Cmd::Usage { runs } => usage(runs),
         Cmd::On { device } => power(true, device.as_deref()),
         Cmd::Off { device } => power(false, device.as_deref()),
         Cmd::Brew { device, drink } => brew(device.as_deref(), &drink.join(" ")),
@@ -94,6 +102,73 @@ fn clock() -> String {
     let out = std::process::Command::new("date").arg("+%T").output();
     out.map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_default()
+}
+
+/// GET from the Data Act API. A 403 ends the command (not an error: Miele hasn't opened it yet);
+/// a 400 means Miele switched that feature off, so there is nothing to show.
+fn data_act<T: serde::de::DeserializeOwned>(token: &str, path: &str) -> Result<Option<T>> {
+    match dataact::get(token, path) {
+        Ok(v) => Ok(Some(v)),
+        Err(e) => match e.downcast_ref::<Refused>() {
+            Some(Refused(403)) => {
+                println!(
+                    "Miele hasn't given this account Data Act access yet (see https://github.com/cubetes/freeMiele/issues/10)."
+                );
+                std::process::exit(0)
+            }
+            Some(Refused(400)) => {
+                println!("  Miele has switched that feature off for your country or appliance.");
+                Ok(None)
+            }
+            _ => Err(e),
+        },
+    }
+}
+
+/// Seconds east of UTC now, from the system clock's zone (macOS `date`).
+/// lean: one offset for all dates, so runs across a daylight-saving change are off by an hour.
+fn utc_offset() -> i64 {
+    let out = std::process::Command::new("date").arg("+%z").output();
+    let z = out.map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    match z.as_deref() {
+        Ok(z) if z.len() == 5 => {
+            let secs = z[1..3].parse::<i64>().unwrap_or(0) * 3600
+                + z[3..].parse::<i64>().unwrap_or(0) * 60;
+            if z.starts_with('-') { -secs } else { secs }
+        }
+        _ => 0,
+    }
+}
+
+fn usage(runs: bool) -> Result<()> {
+    // lean: reuses the 3rd Party API token; a Data Act token flow comes when Miele explains it (#10)
+    let token = token()?;
+    let offset = utc_offset();
+    let Some(appliances) = data_act::<Vec<Appliance>>(&token, "/Appliances/Wifi")? else {
+        return Ok(());
+    };
+    if appliances.is_empty() {
+        println!("No appliances in the Miele Data Act API.");
+    }
+    for a in &appliances {
+        println!("{}", dataact::appliance_name(a));
+        let base = format!("/Appliances/{}/AdditionalFeatures", a.id);
+        if runs {
+            let latest: Option<Vec<Run>> =
+                data_act(&token, &format!("{base}/LatestOperationRuns"))?;
+            for r in latest.iter().flatten() {
+                println!("  {}", dataact::run_line(r, offset));
+            }
+        } else {
+            for period in ["Weeks&timeAmount=4", "Months&timeAmount=3"] {
+                let path = format!("{base}/ConsumptionStatistics?timePeriod={period}");
+                if let Some(c) = data_act::<Consumption>(&token, &path)? {
+                    print!("{}", dataact::usage_table(&c, offset));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn care() -> Result<()> {

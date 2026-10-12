@@ -1,0 +1,45 @@
+{
+  "weeks": [
+    {
+      "from": "2026-09-28T00:00:00Z",
+      "toExclusive": "2026-10-05T00:00:00Z",
+      "overall": {
+        "numberOfRuns": { "total": 4 },
+        "consumption": [
+          { "id": 127, "name": "Water consumption", "dataFormat": "MILLILITER_AS_LITER", "value": 190000 },
+          { "id": 126, "name": "Energy consumption", "dataFormat": "WATTHOURS_AS_KILOWATTHOURS", "value": 3800 }
+        ]
+      }
+    },
+    {
+      "from": "2026-10-05T00:00:00Z",
+      "toExclusive": "2026-10-12T00:00:00Z",
+      "overall": {
+        "numberOfRuns": { "total": 3 },
+        "consumption": [
+          { "id": 127, "name": "Water consumption", "dataFormat": "MILLILITER_AS_LITER", "value": 142000 },
+          { "id": 126, "name": "Energy consumption", "dataFormat": "WATTHOURS_AS_KILOWATTHOURS", "value": 2750 }
+        ]
+      }
+    }
+  ],
+  "months": [
+    {
+      "from": "2026-09-01T00:00:00Z",
+      "toExclusive": "2026-10-01T00:00:00Z",
+      "overall": {
+        "numberOfRuns": { "total": 14 },
+        "consumption": [
+          { "id": 127, "name": "Water consumption", "dataFormat": "MILLILITER_AS_LITER", "value": 640000 },
+          { "id": 126, "name": "Energy consumption", "dataFormat": "WATTHOURS_AS_KILOWATTHOURS", "value": 11200 }
+        ]
+      }
+    },
+    {
+      "from": "2026-10-01T00:00:00Z",
+      "toExclusive": "2026-11-01T00:00:00Z",
+      "overall": { "numberOfRuns": { "total": 7 } }
+    }
+  ],
+  "years": null
+}
