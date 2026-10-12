@@ -80,7 +80,7 @@ fn run(cmd: Cmd) -> Result<()> {
         }
         Cmd::Watch => {
             let mut session = Session::load()?;
-            freemiele::watch(&mut session, |lines| {
+            freemiele::watch(&mut session, |_, lines| {
                 for line in lines {
                     println!("{}  {line}", clock());
                 }

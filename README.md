@@ -87,6 +87,17 @@ end. Starting, stopping and pausing from the computer are planned
 **Usage history** comes from Miele's EU Data Act API. Miele grants access on request, so until
 then `miele usage` says so ([#10](https://github.com/cubetes/freeMiele/issues/10)).
 
+## Mac app (preview)
+
+A menu-bar app that shows what your appliances are doing, live. It is read-only for now: no
+buttons yet. It uses the same login as the `miele` command, so run `miele login` first. Then:
+
+```sh
+cargo run -p freemiele-app
+```
+
+macOS asks once to let it read the saved login; click Always Allow.
+
 ## Help us support more appliances
 
 What an appliance can do over the API differs by model. To add support for yours, log in and run:
@@ -115,8 +126,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-Two crates: `crates/core` talks to Miele, `crates/cli` is the `miele` command. Tests run against
-the sample files in `fixtures/`, never the live API.
+Three crates: `crates/core` talks to Miele, `crates/cli` is the `miele` command, `crates/app` is the
+Mac app (Tauri, plain HTML in `crates/app/ui/`). Tests run against the sample files in
+`fixtures/`, never the live API.
 
 ## Logo
 

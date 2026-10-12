@@ -1,0 +1,22 @@
+[package]
+name = "freemiele-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "freemiele-app"
+path = "src/main.rs"
+
+[dependencies]
+freemiele = { path = "../core" }
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", features = ["image-png", "macos-private-api", "tray-icon"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+window-vibrancy = "0.8"
+
+[build-dependencies]
+tauri-build = "2"

@@ -43,6 +43,9 @@ pub struct State {
     pub status: Value,
     // [hours, minutes]
     pub remaining_time: [u32; 2],
+    // [hours, minutes]; empty or missing when the appliance is not running
+    #[serde(default)]
+    pub elapsed_time: Vec<u32>,
     pub signal_info: bool,
     pub signal_failure: bool,
     pub remote_enable: RemoteEnable,
@@ -356,11 +359,9 @@ fn reading_text(r: &Reading, ours: NameOf) -> Option<String> {
     }
 }
 
-/// One line per device, e.g. "CM6160 Coffee Machine: Off (mobile start off) — needs attention".
-/// An appliance at work adds its program and phase: "In use, coffee · Grinding".
-/// A washer or dryer that has finished says "Finished, Sportswear", with no phase or time left.
-pub fn status_line(d: &Device) -> String {
-    let mut line = format!("{}: {}", name(d), d.state.status.value_localized);
+/// The programme and phase of an appliance at work, e.g. ("Sportswear", "Main wash").
+/// None when it is off, not connected or has no names we know. No phase once it has finished.
+pub fn activity(d: &Device) -> (Option<String>, Option<String>) {
     let status = d.state.status.value_raw;
     // Coffee machines need our names; washers and dryers send their own text.
     let names: Option<(NameOf, NameOf)> = match d.ident.kind.value_raw {
@@ -369,14 +370,27 @@ pub fn status_line(d: &Device) -> String {
         _ => None,
     };
     // 1 = Off (0 is unused but treated the same), 255 = Not connected
-    if let Some((program_name, phase_name)) = names
-        && ![0, 1, 255].contains(&status)
-        && let Some(program) = reading_text(&d.state.program_id, program_name)
-    {
+    let Some((program_name, phase_name)) = names else {
+        return (None, None);
+    };
+    if [0, 1, 255].contains(&status) {
+        return (None, None);
+    }
+    let phase = (status != END)
+        .then(|| reading_text(&d.state.program_phase, phase_name))
+        .flatten();
+    (reading_text(&d.state.program_id, program_name), phase)
+}
+
+/// One line per device, e.g. "CM6160 Coffee Machine: Off (mobile start off) — needs attention".
+/// An appliance at work adds its program and phase: "In use, coffee · Grinding".
+/// A washer or dryer that has finished says "Finished, Sportswear", with no phase or time left.
+pub fn status_line(d: &Device) -> String {
+    let mut line = format!("{}: {}", name(d), d.state.status.value_localized);
+    let status = d.state.status.value_raw;
+    if let (Some(program), phase) = activity(d) {
         line += &format!(", {program}");
-        if status != END
-            && let Some(phase) = reading_text(&d.state.program_phase, phase_name)
-        {
+        if let Some(phase) = phase {
             line += &format!(" · {phase}");
         }
     }
@@ -442,7 +456,7 @@ fn stream(
     token: &str,
     seen: &mut HashMap<String, String>,
     wait: &mut u64,
-    show: &mut impl FnMut(Vec<String>),
+    show: &mut impl FnMut(&Devices, Vec<String>),
 ) -> String {
     let user_agent = concat!("freeMiele/", env!("CARGO_PKG_VERSION"));
     let connect = || -> Result<_> {
@@ -485,16 +499,19 @@ fn stream(
         *wait = 2; // the connection works: the next drop starts the backoff again
         if event == "devices" {
             match serde_json::from_str::<Devices>(&data) {
-                Ok(devices) => show(changes(seen, &devices)),
+                Ok(devices) => {
+                    let lines = changes(seen, &devices);
+                    show(&devices, lines);
+                }
                 Err(e) => eprintln!("Could not read an update ({e})."),
             }
         }
     }
 }
 
-/// Live status: calls `show` with the lines to print, on connect and on every change.
+/// Live status: calls `show` with all devices and the lines to print, on connect and on every update.
 /// Reconnects with a fresh token, waiting 2, 4, 8 ... up to 60 s. Never returns.
-pub fn watch(session: &mut Session, mut show: impl FnMut(Vec<String>)) -> ! {
+pub fn watch(session: &mut Session, mut show: impl FnMut(&Devices, Vec<String>)) -> ! {
     let mut seen = HashMap::new();
     let mut wait = 2;
     loop {
@@ -524,7 +541,7 @@ const WASHING_MACHINE: i64 = 1;
 const TUMBLE_DRYER: i64 = 2;
 const WASHER_DRYER: i64 = 24;
 /// `State.status.value_raw` of a finished program.
-const END: i64 = 7;
+pub const END: i64 = 7;
 
 /// e.g. "  Care so far: descaled 20× · degreased 13× · milk system cleaned 12×"; None if none is set.
 pub fn care_line(f: &FillingLevels) -> Option<String> {
