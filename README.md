@@ -12,29 +12,16 @@ live, turn them on and off, and make a coffee.
 $ miele status
 CM6160 Coffee machine: In use, Degreasing the brew unit (mobile start off)
 WTR860 Washer dryer: In use, Sportswear · Rinsing, 0h23 left (mobile start off)
+
+$ miele brew flat white
+CM6160 Coffee machine: making Flat white.
 ```
 
-Unofficial. Not made or endorsed by Miele. Uses Miele's official cloud API with your own free key.
+Free and open source (AGPL). Unofficial: not made or endorsed by Miele. Uses Miele's official cloud API with your own free key.
 
 **Tested on** a CM 6160 coffee machine and a WTR860 washer-dryer, on macOS. Other Miele
 appliances should show their status too, but nobody has tried them yet: see
 [supported appliances](docs/appliances.md) and [help us test yours](#help-us-support-more-appliances).
-
-## Before you start: get your Miele keys (5 minutes)
-
-freeMiele talks to Miele's official cloud API, which needs a free personal key pair.
-
-1. **Pair your appliance in the Miele app**, so it shows up on your Miele account.
-2. **Register** at <https://developer.miele.com/get-involved>: choose the personal,
-   non-commercial option, give any application name (e.g. "freeMiele") and your email.
-3. **Keep the two values Miele gives you:** a **client ID** and a **client secret**.
-   They are yours alone: never share them, paste them into issues or commit them.
-   One email address gets one key pair; registering again replaces the old one.
-4. **Log in:** run `miele login`, paste the client ID and secret, and sign in with your
-   Miele account in the browser window that opens.
-5. **Check it works:** `miele status` should list your appliances.
-
-Stuck? Ask in [Discussions](https://github.com/cubetes/freeMiele/discussions).
 
 ## Install
 
@@ -52,6 +39,22 @@ Your login is kept in the macOS Keychain (entry `miele-cli`), never in a file, s
 builds remember it today ([#7](https://github.com/cubetes/freeMiele/issues/7): help wanted for
 Linux and Windows). After installing a new version, macOS asks once whether `miele` may read it:
 click **Always Allow**.
+
+## Before you start: get your Miele keys (5 minutes)
+
+freeMiele talks to Miele's official cloud API, which needs a free personal key pair.
+
+1. **Pair your appliance in the Miele app**, so it shows up on your Miele account.
+2. **Register** at <https://developer.miele.com/get-involved>: choose the personal,
+   non-commercial option, give any application name (e.g. "freeMiele") and your email.
+3. **Keep the two values Miele gives you:** a **client ID** and a **client secret**.
+   They are yours alone: never share them, paste them into issues or commit them.
+   One email address gets one key pair; registering again replaces the old one.
+4. **Log in:** run `miele login`, paste the client ID and secret, and sign in with your
+   Miele account in the browser window that opens.
+5. **Check it works:** `miele status` should list your appliances.
+
+Stuck? Ask in [Discussions](https://github.com/cubetes/freeMiele/discussions).
 
 ## Use
 
