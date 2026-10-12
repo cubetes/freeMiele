@@ -47,9 +47,30 @@ jobs:
           name: miele-${{ matrix.target }}
           path: ${{ env.ASSET }}
 
+  app:
+    name: build (Mac app)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      # One universal app runs on both Apple silicon and Intel Macs: one job, one download.
+      - run: cargo install tauri-cli --version '^2' --locked
+      - run: cargo tauri build --target universal-apple-darwin --bundles app
+      - name: Zip
+        run: |
+          name="freeMiele-${{ github.ref_type == 'tag' && github.ref_name || 'test' }}-macos"
+          ditto -c -k --keepParent target/universal-apple-darwin/release/bundle/macos/freeMiele.app "$name.zip"
+          echo "ASSET=$name.zip" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: freeMiele-app
+          path: ${{ env.ASSET }}
+
   publish:
     if: github.ref_type == 'tag'
-    needs: build
+    needs: [build, app]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -64,3 +85,33 @@ jobs:
           gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
             || gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --generate-notes
           gh release upload "$GITHUB_REF_NAME" dist/* -R "$GITHUB_REPOSITORY" --clobber
+
+  # Does nothing until the HOMEBREW_TAP_TOKEN secret exists (see packaging/homebrew/README.md).
+  tap:
+    if: github.ref_type == 'tag'
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          [ -n "$TAP_TOKEN" ] || { echo "No HOMEBREW_TAP_TOKEN; skipping."; exit 0; }
+          t="$GITHUB_REF_NAME"
+          gh release download "$t" -R "$GITHUB_REPOSITORY" -D dist
+          sha() { sha256sum "dist/$1" | cut -d' ' -f1; }
+          git clone "https://x-access-token:$TAP_TOKEN@github.com/cubetes/homebrew-freemiele.git" tap
+          mkdir -p tap/Formula tap/Casks
+          sed -e "s/@VERSION@/${t#v}/" \
+              -e "s/@SHA_MAC_ARM@/$(sha miele-$t-aarch64-apple-darwin.tar.gz)/" \
+              -e "s/@SHA_MAC_INTEL@/$(sha miele-$t-x86_64-apple-darwin.tar.gz)/" \
+              -e "s/@SHA_LINUX@/$(sha miele-$t-x86_64-unknown-linux-gnu.tar.gz)/" \
+              packaging/homebrew/Formula/miele.rb > tap/Formula/miele.rb
+          sed -e "s/@VERSION@/${t#v}/" -e "s/@SHA_APP@/$(sha freeMiele-$t-macos.zip)/" \
+              packaging/homebrew/Casks/freemiele.rb > tap/Casks/freemiele.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "miele ${t#v}" && git push
