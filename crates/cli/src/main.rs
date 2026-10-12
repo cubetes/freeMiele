@@ -9,7 +9,11 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 
 #[derive(Parser)]
-#[command(name = "miele", about = "Control Miele appliances from the terminal")]
+#[command(
+    name = "miele",
+    version,
+    about = "Control Miele appliances from the terminal"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
