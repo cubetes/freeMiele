@@ -4,10 +4,13 @@ use reqwest::Url;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
+use std::hash::{BuildHasher, RandomState};
+use std::io::{BufRead, BufReader, Write};
 use std::mem::take;
+use std::net::TcpListener;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -726,6 +729,76 @@ pub fn code_from_request(line: &str, state: &str) -> Option<String> {
     q.get("code").map(|c| c.to_string())
 }
 
+/// How long to wait for the browser to come back from Miele's sign-in.
+const LOGIN_WAIT: Duration = Duration::from_secs(300);
+
+/// Wait on 127.0.0.1:8765 for Miele's sign-in to send the browser back, and return the login code.
+/// `open` gets the sign-in address and should show it to the user (open the browser).
+/// Ends with an error if the port is busy, `cancel` is set, or nobody signs in within 5 minutes.
+pub fn wait_for_login(
+    client_id: &str,
+    open: impl FnOnce(&Url) -> Result<()>,
+    cancel: &AtomicBool,
+) -> Result<String> {
+    // Random value that ties the browser's answer to this login attempt.
+    let state = format!("{:x}", RandomState::new().hash_one(std::process::id()));
+    let listener = match TcpListener::bind("127.0.0.1:8765") {
+        Ok(l) => l,
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+            return Err("Another login is already waiting. Close it and try again.".into());
+        }
+        Err(e) => return Err(e.into()),
+    };
+    listener.set_nonblocking(true)?; // so a cancel or the time limit can end the wait
+    open(&login_url(client_id.trim(), &state))?;
+    let deadline = Instant::now() + LOGIN_WAIT;
+    // Wait for the browser to come back with the login code; ignore stray requests (favicon etc).
+    loop {
+        if cancel.load(Ordering::SeqCst) {
+            return Err("Login cancelled.".into());
+        }
+        if Instant::now() > deadline {
+            return Err("Miele sign-in took too long. Try again.".into());
+        }
+        let mut stream = match listener.accept() {
+            Ok((s, _)) => s,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(100));
+                continue;
+            }
+            Err(e) => return Err(e.into()),
+        };
+        stream.set_nonblocking(false)?;
+        stream.set_read_timeout(Some(Duration::from_secs(5)))?; // a silent stray must not block us
+        let mut line = String::new();
+        if BufReader::new(&stream).read_line(&mut line).is_err() {
+            continue;
+        }
+        if !line.contains("state=") {
+            stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")?;
+            continue;
+        }
+        let code = code_from_request(&line, &state);
+        let msg = if code.is_some() {
+            "Logged in. You can close this tab."
+        } else {
+            "Login failed. Go back to where you started the login."
+        };
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{msg}",
+            msg.len()
+        )?;
+        return code.ok_or_else(|| {
+            format!(
+                "Miele did not return a login code. Browser said: {}",
+                line.trim()
+            )
+            .into()
+        });
+    }
+}
+
 impl Session {
     /// Trade the code from the browser login for tokens.
     pub fn login(client_id: String, client_secret: String, code: &str) -> Result<Self> {
@@ -925,6 +998,28 @@ mod tests {
         );
         // The error keeps its meaning; only the id goes.
         assert!(out.contains("404 Not Found for /devices/[removed]/actions"));
+    }
+
+    #[test]
+    fn login_wait_reports_a_busy_port_and_a_cancel() {
+        let never = |_: &Url| -> Result<()> { panic!("must not open the browser") };
+        let Ok(held) = TcpListener::bind("127.0.0.1:8765") else {
+            return; // something else on this machine is using the port
+        };
+        let busy = wait_for_login("id", never, &AtomicBool::new(false)).unwrap_err();
+        assert_eq!(
+            busy.to_string(),
+            "Another login is already waiting. Close it and try again."
+        );
+        drop(held);
+        let mut opened = String::new();
+        let open = |url: &Url| -> Result<()> {
+            opened = url.to_string();
+            Ok(())
+        };
+        let cancelled = wait_for_login("my-id", open, &AtomicBool::new(true)).unwrap_err();
+        assert_eq!(cancelled.to_string(), "Login cancelled.");
+        assert!(opened.contains("client_id=my-id"));
     }
 
     #[test]

@@ -50,3 +50,11 @@ body{--body:'FM Digits','Atkinson Hyperlegible Next','Atkinson Hyperlegible',sys
 .picks .more{justify-content:space-between;color:var(--muted);background:transparent;box-shadow:none}
 .picks .more[aria-pressed="true"]{color:var(--ink);justify-content:flex-start}
 .picks .more[aria-pressed="true"] svg:last-child{margin-left:auto}
+/* Login card */
+.form{display:flex;flex-direction:column;gap:10px}
+.field{display:flex;flex-direction:column;gap:4px;font-size:12px;line-height:16px;color:var(--muted)}
+.field input{height:28px;box-sizing:border-box;padding:0 8px;border-radius:8px;border:0.5px solid var(--line-strong);background:var(--surface);font:400 13px/1 var(--body);color:var(--ink);user-select:text}
+.field input:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
+.link{border:none;background:none;padding:0;font:inherit;color:var(--brand);text-decoration:underline}
+.link:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.err{color:var(--fault)}

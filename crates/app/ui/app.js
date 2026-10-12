@@ -109,8 +109,70 @@ function coffeeControls(card, c) {
   card.append(row);
 }
 
+// The login form's state, kept here because a redraw rebuilds the inputs. The secret lives only
+// until the login succeeds, then it is cleared; Rust sends it to the Keychain and nowhere else.
+const form = { id: '', secret: '', phase: 'form', error: '' }; // phase: form, waiting or connecting
+
+async function logIn(e) {
+  e.preventDefault();
+  form.phase = 'waiting';
+  form.error = '';
+  render(last);
+  try {
+    await tauri.core.invoke('log_in', { clientId: form.id, clientSecret: form.secret });
+    form.id = form.secret = '';
+    form.phase = 'connecting';
+  } catch (err) {
+    form.phase = 'form';
+    form.error = String(err) === 'Login cancelled.' ? '' : String(err);
+  }
+  render(last);
+}
+
+function loginForm(card) {
+  const f = el('form', 'form');
+  f.noValidate = true;
+  f.addEventListener('submit', logIn);
+  if (form.phase !== 'form') {
+    const wait = form.phase === 'waiting';
+    const note = el('div', 'sub', wait ? 'Waiting for Miele sign-in in your browser…' : 'Logged in. Loading your appliances…');
+    note.setAttribute('role', 'status');
+    f.append(note);
+    if (wait) f.append(button('Cancel', '', () => tauri.core.invoke('cancel_login')));
+    card.append(f);
+    return;
+  }
+  f.append(el('div', 'sub', 'Enter the keys you got from Miele. They are kept in your Mac’s Keychain.'));
+  for (const [key, label, type] of [['id', 'Client ID', 'text'], ['secret', 'Client secret', 'password']]) {
+    const input = el('input');
+    input.type = type;
+    input.value = form[key];
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.addEventListener('input', () => { form[key] = input.value; });
+    const field = el('label', 'field');
+    field.append(label, input);
+    f.append(field);
+  }
+  if (form.error) {
+    const err = el('div', 'sub err', form.error);
+    err.setAttribute('role', 'alert');
+    f.append(err);
+  }
+  const log = button('Log in with Miele', 'primary', () => {});
+  log.type = 'submit';
+  const help = el('button', 'link', 'How to get your keys');
+  help.type = 'button';
+  help.addEventListener('click', () => tauri.core.invoke('open_keys_help'));
+  const row = el('div', 'row');
+  row.append(log, el('span', 'grow'), help);
+  f.append(row);
+  card.append(f);
+}
+
 function render(cards) {
   last = cards;
+  if (!cards.some((c) => c.login)) form.phase = 'form';
   for (const id of drinks.keys()) {
     if (!cards.some((c) => c.coffee?.id === id && c.coffee.on)) { drinks.delete(id); picked.delete(id); }
   }
@@ -131,6 +193,7 @@ function render(cards) {
     if (c.coffee?.on && !c.coffee.mobile_start) text.append(steps());
     if (c.sub) text.append(el('div', 'sub', c.sub));
     card.append(meta, text);
+    if (c.login) loginForm(card);
     if (c.progress != null) {
       const bar = el('div', 'track');
       bar.setAttribute('role', 'progressbar');
