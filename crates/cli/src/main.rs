@@ -23,6 +23,8 @@ enum Cmd {
     Logout,
     /// Show the state of every appliance on your Miele account
     Status,
+    /// Print a line whenever an appliance changes, until you press Ctrl+C
+    Watch,
     /// How often your coffee machine has been cleaned, and the care schedule
     Care,
     /// Turn on the appliance that can be turned on (e.g. the coffee machine)
@@ -67,6 +69,14 @@ fn run(cmd: Cmd) -> Result<()> {
                 .for_each(|d| println!("{}", freemiele::status_line(d)));
             Ok(())
         }
+        Cmd::Watch => {
+            let mut session = Session::load()?;
+            freemiele::watch(&mut session, |lines| {
+                for line in lines {
+                    println!("{}  {line}", clock());
+                }
+            })
+        }
         Cmd::Care => care(),
         Cmd::On { device } => power(true, device.as_deref()),
         Cmd::Off { device } => power(false, device.as_deref()),
@@ -76,6 +86,14 @@ fn run(cmd: Cmd) -> Result<()> {
 
 fn token() -> Result<String> {
     Session::load()?.access_token()
+}
+
+/// Local time as HH:MM:SS, e.g. "22:48:14".
+fn clock() -> String {
+    // lean: asks `date` (always on macOS) to avoid a time crate; swap for chrono if this runs elsewhere.
+    let out = std::process::Command::new("date").arg("+%T").output();
+    out.map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default()
 }
 
 fn care() -> Result<()> {

@@ -2,6 +2,10 @@ use reqwest::Url;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::{BufRead, BufReader};
+use std::mem::take;
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -281,6 +285,118 @@ pub fn status_line(d: &Device) -> String {
         line += " — needs attention (water, beans, tray or care)";
     }
     line
+}
+
+/// Builds Server-Sent Events messages from lines. A blank line ends a message: (event, data).
+#[derive(Default)]
+pub struct Sse {
+    event: String,
+    data: String,
+}
+
+impl Sse {
+    pub fn line(&mut self, line: &str) -> Option<(String, String)> {
+        if line.is_empty() {
+            let done = !self.event.is_empty() || !self.data.is_empty();
+            return done.then(|| (take(&mut self.event), take(&mut self.data)));
+        }
+        if let Some(v) = line.strip_prefix("event:") {
+            self.event = v.trim_start().into();
+        } else if let Some(v) = line.strip_prefix("data:") {
+            if !self.data.is_empty() {
+                self.data.push('\n');
+            }
+            self.data += v.trim_start();
+        }
+        None // comments (":") and other fields are ignored
+    }
+}
+
+/// Lines to print for devices whose status line differs from `seen` (which it updates).
+/// The first call prints every device once.
+pub fn changes(seen: &mut HashMap<String, String>, devices: &Devices) -> Vec<String> {
+    let mut ids: Vec<_> = devices.keys().collect();
+    ids.sort();
+    ids.into_iter()
+        .filter_map(|id| {
+            let line = status_line(&devices[id]);
+            (seen.insert(id.clone(), line.clone()) != Some(line.clone())).then_some(line)
+        })
+        .collect()
+}
+
+/// No event, not even a ping, for this long means the connection is dead.
+const SILENCE: Duration = Duration::from_secs(60);
+
+/// One connection to `GET /devices/all/events`. Always ends in an error: it dropped or went silent.
+fn stream(
+    token: &str,
+    seen: &mut HashMap<String, String>,
+    wait: &mut u64,
+    show: &mut impl FnMut(Vec<String>),
+) -> String {
+    let user_agent = concat!("freeMiele/", env!("CARGO_PKG_VERSION"));
+    let connect = || -> Result<_> {
+        // No overall timeout: it would cut a long stream.
+        Ok(reqwest::blocking::Client::builder()
+            .timeout(None)
+            .user_agent(user_agent)
+            .build()?
+            .get(format!("{API}/devices/all/events"))
+            .bearer_auth(token)
+            .header("Accept", "text/event-stream")
+            .send()?
+            .error_for_status()?)
+    };
+    let reply = match connect() {
+        Ok(r) => r,
+        Err(e) => return e.to_string(),
+    };
+    // blocking reqwest has no read timeout, so a thread reads and this side waits with a limit.
+    // lean: after a silent connection its thread lingers until the socket dies; fine for a CLI.
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(reply).lines() {
+            if tx.send(line.map_err(|e| e.to_string())).is_err() {
+                return;
+            }
+        }
+    });
+    let mut sse = Sse::default();
+    loop {
+        let line = match rx.recv_timeout(SILENCE) {
+            Ok(Ok(line)) => line,
+            Ok(Err(e)) => return e,
+            Err(RecvTimeoutError::Timeout) => return "nothing heard for 60 s".into(),
+            Err(RecvTimeoutError::Disconnected) => return "connection closed".into(),
+        };
+        let Some((event, data)) = sse.line(&line) else {
+            continue;
+        };
+        *wait = 2; // the connection works: the next drop starts the backoff again
+        if event == "devices" {
+            match serde_json::from_str::<Devices>(&data) {
+                Ok(devices) => show(changes(seen, &devices)),
+                Err(e) => eprintln!("Could not read an update ({e})."),
+            }
+        }
+    }
+}
+
+/// Live status: calls `show` with the lines to print, on connect and on every change.
+/// Reconnects with a fresh token, waiting 2, 4, 8 ... up to 60 s. Never returns.
+pub fn watch(session: &mut Session, mut show: impl FnMut(Vec<String>)) -> ! {
+    let mut seen = HashMap::new();
+    let mut wait = 2;
+    loop {
+        let why = match session.access_token() {
+            Ok(token) => stream(&token, &mut seen, &mut wait, &mut show),
+            Err(e) => e.to_string(),
+        };
+        eprintln!("Connection lost ({why}). Trying again in {wait} s.");
+        std::thread::sleep(Duration::from_secs(wait));
+        wait = (wait * 2).min(60);
+    }
 }
 
 /// Coffee machine care counters, from `GET /devices/{id}/fillingLevels` (null = not supported).
@@ -623,5 +739,31 @@ mod tests {
             code_from_request("GET /?state=abc&error=access_denied HTTP/1.1", "abc"),
             None
         );
+    }
+
+    #[test]
+    fn reads_events_and_reports_changes() {
+        let mut sse = Sse::default();
+        let mut seen = HashMap::new();
+        let (mut count, mut printed) = (HashMap::new(), Vec::new());
+        for line in include_str!("../../../fixtures/events.sample.txt").lines() {
+            if let Some((event, data)) = sse.line(line) {
+                *count.entry(event.clone()).or_insert(0) += 1;
+                if event == "devices" {
+                    printed.extend(changes(&mut seen, &serde_json::from_str(&data).unwrap()));
+                }
+            }
+        }
+        assert_eq!((count["devices"], count["actions"]), (9, 9));
+        assert!(count["ping"] > 0);
+        // On connect every appliance is printed once; after that only what changed.
+        assert_eq!(printed.len(), 9);
+        assert_eq!(printed[0], "CM6160 Coffee machine: Off (mobile start off)");
+        assert!(printed[2].ends_with("Sportswear · Rinsing, 0h23 left (mobile start off)"));
+        // Same state again prints nothing.
+        let devices: Devices =
+            serde_json::from_str(include_str!("../../../fixtures/devices.sample.json")).unwrap();
+        assert_eq!(changes(&mut seen, &devices).len(), 1);
+        assert!(changes(&mut seen, &devices).is_empty());
     }
 }
