@@ -252,6 +252,7 @@ fn command(
     if !matches!(e.downcast_ref::<Rejected>(), Some(r) if r.0.is_server_error()) {
         return Err(e);
     }
+    // lean: one fixed 2 s wait before re-reading; add a short retry if slow machines report false errors.
     std::thread::sleep(std::time::Duration::from_secs(2));
     match get::<Device>(token, &path) {
         Ok(d) if confirmed(request, &d.state) => Ok(true),

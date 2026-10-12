@@ -368,9 +368,9 @@ pub fn status_line(d: &Device) -> String {
         WASHING_MACHINE | TUMBLE_DRYER | WASHER_DRYER => Some((|_| None, |_| None)),
         _ => None,
     };
-    // 0 = Off, 255 = Not connected
+    // 1 = Off (0 is unused but treated the same), 255 = Not connected
     if let Some((program_name, phase_name)) = names
-        && ![0, 255].contains(&status)
+        && ![0, 1, 255].contains(&status)
         && let Some(program) = reading_text(&d.state.program_id, program_name)
     {
         line += &format!(", {program}");
