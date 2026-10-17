@@ -32,6 +32,8 @@ body{--body:'FM Digits','Atkinson Hyperlegible Next','Atkinson Hyperlegible',sys
 .off{color:var(--muted);background:var(--off-bg)}
 .title{font-family:var(--display);font-weight:600;font-size:17px;line-height:22px;font-variant-numeric:proportional-nums}
 .sub{color:var(--muted);margin-top:2px;user-select:text}
+.care{font-size:12px;line-height:16px;margin:0}
+.care.low{color:var(--attention)}
 .track{height:6px;border-radius:3px;background:var(--track);overflow:hidden}
 .track>div{height:100%;border-radius:3px;background:var(--crema)}
 .steps{margin:6px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px}
