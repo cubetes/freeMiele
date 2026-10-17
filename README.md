@@ -63,6 +63,8 @@ Stuck? Ask in [Discussions](https://github.com/cubetes/freeMiele/discussions).
 
 ```sh
 miele status           # what every appliance is doing right now
+miele status --json    # the same as JSON, for scripts (see below)
+miele completions zsh  # Tab-completion script; also bash and fish (see below)
 miele watch            # live updates until you press Ctrl+C
 miele on               # turns on whichever appliance allows it
 miele off
@@ -76,6 +78,27 @@ miele usage --runs     # the latest runs
 miele dump             # raw appliance data for a support report, serial numbers removed
 miele logout           # ends the login at Miele and deletes it from this computer
 ```
+
+**Scripts:** `miele status --json` prints one JSON array, one object per appliance. There are no
+serial numbers or ids, and `name` is always model + type, never the name you gave the appliance.
+
+```json
+[{"name": "WTR860 Washer dryer", "model": "WTR860", "type": "Washer dryer", "status": "In use",
+  "program": "Sportswear", "phase": "Main wash", "minutes_left": 23}]
+```
+
+`program` and `phase` are `null` when the appliance is not at work. `minutes_left` is a number, or
+`null` when there is no time left to show.
+
+**Tab completion:** `miele br<Tab>` becomes `miele brew`.
+
+- zsh: `mkdir -p ~/.zfunc && miele completions zsh > ~/.zfunc/_miele`, then put
+  `fpath+=~/.zfunc` before `compinit` in `~/.zshrc`.
+- bash: `miele completions bash > ~/.local/share/bash-completion/completions/miele`
+  (needs the `bash-completion` package).
+- fish: `miele completions fish > ~/.config/fish/completions/miele.fish`
+
+`miele status` colours the state word when it prints to a terminal. Set `NO_COLOR=1` to turn that off.
 
 Miele's server sometimes reports an error for a command that worked; freeMiele checks the machine and tells you what really happened.
 
