@@ -1,10 +1,12 @@
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::Shell;
 use freemiele::dataact::{self, Appliance, Consumption, Refused, Run};
 use freemiele::{
-    Actions, CARE_SCHEDULE, COFFEE_MACHINE, Devices, FillingLevels, LastRun, Outcome, Program,
-    Result, Session, WASHERS_AND_DRYERS, care_line, choose, get, history_line, name, twin_dos_line,
+    Actions, CARE_SCHEDULE, COFFEE_MACHINE, Device, Devices, FillingLevels, LastRun, Outcome,
+    Program, Result, Session, WASHERS_AND_DRYERS, care_line, choose, get, history_line, name,
+    twin_dos_line,
 };
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::sync::atomic::AtomicBool;
 
 #[derive(Parser)]
@@ -25,7 +27,11 @@ enum Cmd {
     /// Log out: end the login at Miele and delete it from the Keychain
     Logout,
     /// Show the state of every appliance on your Miele account
-    Status,
+    Status {
+        /// Print one JSON array instead (no serial numbers), for scripts
+        #[arg(long)]
+        json: bool,
+    },
     /// Print a line whenever an appliance changes, until you press Ctrl+C
     Watch,
     /// Print raw appliance data as JSON for a support report; serial numbers and names are removed
@@ -44,6 +50,8 @@ enum Cmd {
         #[arg(long)]
         runs: bool,
     },
+    /// Print a Tab-completion script for your shell (see the README for where to put it)
+    Completions { shell: Shell },
     /// Turn on the appliance that can be turned on (e.g. the coffee machine)
     On {
         /// Which appliance, by name or model (e.g. CM6160); needed if several qualify
@@ -76,14 +84,23 @@ fn run(cmd: Cmd) -> Result<()> {
     match cmd {
         Cmd::Login => login(),
         Cmd::Logout => logout(),
-        Cmd::Status => {
+        Cmd::Status { json } => {
             let devices: Devices = get(&token()?, "/devices")?;
+            if json {
+                println!("{}", status_json(&devices));
+                return Ok(());
+            }
             if devices.is_empty() {
                 println!("No appliances on this Miele account.");
             }
+            let color = std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
             devices
                 .values()
-                .for_each(|d| println!("{}", freemiele::status_line(d)));
+                .for_each(|d| println!("{}", colored_status(d, color)));
+            Ok(())
+        }
+        Cmd::Completions { shell } => {
+            clap_complete::generate(shell, &mut Cli::command(), "miele", &mut std::io::stdout());
             Ok(())
         }
         Cmd::Watch => {
@@ -109,6 +126,62 @@ fn run(cmd: Cmd) -> Result<()> {
         Cmd::Off { device } => power(false, device.as_deref()),
         Cmd::Brew { device, drink } => brew(device.as_deref(), &drink.join(" ")),
     }
+}
+
+/// `status_line` with the state word coloured (256-colour ANSI near the design/ palette).
+/// The word stays, so colour is never the only signal.
+fn colored_status(d: &Device, color: bool) -> String {
+    let line = freemiele::status_line(d);
+    let word = &d.state.status.value_localized;
+    let prefix = format!("{}: ", name(d));
+    let status = d.state.status.value_raw;
+    let code = if d.state.signal_failure || status == 8 {
+        210 // fault
+    } else if freemiele::needs_attention(d) {
+        179 // attention
+    } else if [0, 1, 255].contains(&status) {
+        245 // off / not connected: dim
+    } else if status == 5 {
+        173 // running: copper
+    } else {
+        79 // ready: teal
+    };
+    match line.strip_prefix(&prefix) {
+        Some(rest) if color => format!(
+            "{prefix}\x1b[38;5;{code}m{word}\x1b[0m{}",
+            &rest[word.len()..]
+        ),
+        _ => line,
+    }
+}
+
+/// One JSON object per appliance. No serial numbers or device ids, and not the name you gave the
+/// appliance (it could name your home): `name` is always model + type.
+fn status_json(devices: &Devices) -> serde_json::Value {
+    let mut list: Vec<_> = devices
+        .values()
+        .map(|d| {
+            let (program, phase) = freemiele::activity(d);
+            let [h, m] = d.state.remaining_time;
+            let minutes =
+                (h + m > 0 && d.state.status.value_raw != freemiele::END).then(|| h * 60 + m);
+            let (model, kind) = (
+                &d.ident.device_ident_label.tech_type,
+                &d.ident.kind.value_localized,
+            );
+            serde_json::json!({
+                "name": format!("{model} {kind}"),
+                "model": model,
+                "type": kind,
+                "status": d.state.status.value_localized,
+                "program": program,
+                "phase": phase,
+                "minutes_left": minutes,
+            })
+        })
+        .collect();
+    list.sort_by_key(|v| v["name"].as_str().map(String::from));
+    list.into()
 }
 
 fn token() -> Result<String> {
@@ -384,7 +457,24 @@ fn login() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::consent_missing;
+    use super::{colored_status, consent_missing, status_json};
+    use freemiele::Devices;
+
+    #[test]
+    fn json_status_has_no_serial_and_colour_keeps_the_word() {
+        let devices: Devices = serde_json::from_str(include_str!(
+            "../../../fixtures/devices.washer-running.sample.json"
+        ))
+        .unwrap();
+        let json = status_json(&devices);
+        assert_eq!(json[0]["model"], "WTR860");
+        assert_eq!(json[0]["program"], "Sportswear");
+        assert_eq!(json[0]["minutes_left"], 23);
+        assert!(!json.to_string().contains("000000000024"));
+        let d = devices.values().next().unwrap();
+        assert!(colored_status(d, true).contains("\x1b[38;5;173mIn use\x1b[0m, Sportswear"));
+        assert_eq!(colored_status(d, false), freemiele::status_line(d));
+    }
 
     #[test]
     fn consent_is_found_in_a_403_only() {
