@@ -12,6 +12,8 @@ and attach the file from `miele dump > appliance.json`.
 
 Last checked: 12 Oct 2026 (Lithium 0.3.0), on macOS 27 with Apple silicon.
 
+Programme and phase names that Miele doesn't send come from Home Assistant's Miele integration and show their code, e.g. "Appliance rinse (24750)", until someone confirms them: report what the machine's display said while `status` showed the code, and we add it to the confirmed list in `crates/core/src/names.rs`.
+
 ## Not tried yet: testers wanted
 
 Nobody has run freeMiele against these types yet. Miele's API says they're supported, but each
