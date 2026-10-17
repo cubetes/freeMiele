@@ -6,7 +6,7 @@ mod settings;
 
 use freemiele::{
     COFFEE_MACHINE, Device, Devices, END, FillingLevels, NOT_LOGGED_IN, Outcome, Program, Rejected,
-    Session, WASHERS_AND_DRYERS, activity, find_program, get,
+    Session, TUMBLE_DRYER, WASHERS_AND_DRYERS, activity, find_program, get,
 };
 use serde::{Deserialize, Serialize};
 use settings::Settings;
@@ -58,6 +58,8 @@ struct Card {
     coffee: Option<Coffee>,
     /// Set when the page should draw the login form.
     login: bool,
+    /// Which picture the page draws in the ring: a drink, a state or the kind of appliance.
+    icon: &'static str,
 }
 
 #[derive(Serialize, Clone, PartialEq, Debug)]
@@ -125,6 +127,39 @@ fn time_left([h, m]: [u32; 2]) -> String {
     match h {
         0 => format!("{m} min"),
         _ => format!("{h} h {m:02} min"),
+    }
+}
+
+/// The icon for a coffee machine's programme code. Drinks repeat every 32 codes, one block per
+/// user profile; the care programmes 24750-24799 are the machine rinsing or cleaning itself.
+fn coffee_icon(code: Option<i64>) -> &'static str {
+    match code {
+        Some(24750..=24799) => "rinsing",
+        Some(c @ 24000..=24191) => match (c - 24000) % 32 {
+            0 => "ristretto",
+            1 => "espresso",
+            2 => "coffee",
+            3 => "long_coffee",
+            4 => "cappuccino",
+            5 => "cappuccino_italiano",
+            6 => "latte_macchiato",
+            7 => "espresso_macchiato",
+            8 => "cafe_au_lait",
+            9 => "caffe_latte",
+            12 => "flat_white",
+            13 => "very_hot_water",
+            14 => "hot_water",
+            15 => "hot_milk",
+            16 => "milk_foam",
+            17 => "black_tea",
+            18 => "herbal_tea",
+            19 => "fruit_tea",
+            20 => "green_tea",
+            21 => "white_tea",
+            22 => "japanese_tea",
+            _ => "brewing",
+        },
+        _ => "brewing",
     }
 }
 
@@ -209,6 +244,22 @@ fn card(id: &str, d: &Device) -> Card {
     let progress = (status == IN_USE && d.ident.kind.value_raw != COFFEE_MACHINE && total > 0)
         .then(|| (done * 100 / total) as u8);
     let kind = d.ident.kind.value_raw;
+    // A washer-dryer says "drying" in its phase; a dryer always dries.
+    let dries = kind == TUMBLE_DRYER
+        || phase
+            .as_ref()
+            .is_some_and(|p| p.to_lowercase().contains("dry"));
+    let icon = match status {
+        NOT_CONNECTED => "offline",
+        1 => "power",
+        _ if s.signal_failure || attention => "attention",
+        END => "finished",
+        IN_USE if kind == COFFEE_MACHINE => coffee_icon(s.program_id.value_raw),
+        IN_USE if dries => "drying",
+        IN_USE => "washing",
+        _ if kind == COFFEE_MACHINE => "machine",
+        _ => "washer",
+    };
     let has_care = kind == COFFEE_MACHINE || WASHERS_AND_DRYERS.contains(&kind);
     Card {
         id: if has_care {
@@ -228,6 +279,7 @@ fn card(id: &str, d: &Device) -> Card {
         progress,
         coffee,
         login: false,
+        icon,
     }
 }
 
@@ -303,6 +355,7 @@ fn offline_card(message: String) -> Card {
         progress: None,
         coffee: None,
         login: false,
+        icon: "offline",
     }
 }
 
@@ -333,6 +386,7 @@ fn login_card() -> Card {
         progress: None,
         coffee: None,
         login: true,
+        icon: "offline",
     }
 }
 
@@ -1040,6 +1094,38 @@ mod tests {
             (false, (true, false)),
             "switch off"
         );
+    }
+
+    #[test]
+    fn every_state_gets_its_icon_and_no_code_is_shown() {
+        let devices: Devices =
+            serde_json::from_str(include_str!("../../../fixtures/devices.states.sample.json"))
+                .unwrap();
+        let cards: Vec<_> = sorted(&devices)
+            .into_iter()
+            .map(|(i, d)| card(i, d))
+            .collect();
+        let icons: Vec<_> = cards.iter().map(|c| c.icon).collect();
+        assert_eq!(
+            icons,
+            [
+                "power",
+                "machine",
+                "espresso",
+                "rinsing",
+                "finished",
+                "attention",
+                "offline"
+            ]
+        );
+        for c in &cards {
+            let text = format!("{} {} {:?}", c.title, c.chip, c.sub);
+            assert!(!text.contains("24759") && !text.contains("4405"), "{text}");
+        }
+        assert_eq!(coffee_icon(Some(24050)), "herbal_tea");
+        assert_eq!(coffee_icon(Some(24999)), "brewing");
+        assert_eq!(coffee_icon(None), "brewing");
+        assert_eq!(card_of(&washer()).icon, "washing");
     }
 
     #[test]

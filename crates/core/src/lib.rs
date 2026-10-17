@@ -726,7 +726,7 @@ pub fn history_line(r: &LastRun, offset: i64) -> String {
 /// `Ident.kind.value_raw` of a coffee machine.
 pub const COFFEE_MACHINE: i64 = 17;
 const WASHING_MACHINE: i64 = 1;
-const TUMBLE_DRYER: i64 = 2;
+pub const TUMBLE_DRYER: i64 = 2;
 const WASHER_DRYER: i64 = 24;
 /// `Ident.kind.value_raw` of a dishwasher.
 pub const DISHWASHER: i64 = 7;
