@@ -497,7 +497,7 @@ pub fn activity(d: &Device) -> (Option<String>, Option<String>) {
 /// The programme settings of a washer or dryer at work, e.g. "40 °C · 1200 rpm".
 /// Parts the machine leaves out (missing, null, 0 or -32768) are skipped; None if none is left.
 pub fn details(d: &Device) -> Option<String> {
-    if ![WASHING_MACHINE, TUMBLE_DRYER, WASHER_DRYER].contains(&d.ident.kind.value_raw)
+    if !WASHERS_AND_DRYERS.contains(&d.ident.kind.value_raw)
         || [0, 1, 255].contains(&d.state.status.value_raw)
     {
         return None;
@@ -723,6 +723,8 @@ pub const COFFEE_MACHINE: i64 = 17;
 const WASHING_MACHINE: i64 = 1;
 const TUMBLE_DRYER: i64 = 2;
 const WASHER_DRYER: i64 = 24;
+/// The types Miele keeps a run history for, and that report spin speed and temperature.
+pub const WASHERS_AND_DRYERS: [i64; 3] = [WASHING_MACHINE, TUMBLE_DRYER, WASHER_DRYER];
 /// `State.status.value_raw` of a finished program.
 pub const END: i64 = 7;
 

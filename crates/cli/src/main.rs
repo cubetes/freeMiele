@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use freemiele::dataact::{self, Appliance, Consumption, Refused, Run};
 use freemiele::{
     Actions, CARE_SCHEDULE, COFFEE_MACHINE, Devices, FillingLevels, LastRun, Outcome, Program,
-    Result, Session, care_line, choose, get, history_line, name, twin_dos_line,
+    Result, Session, WASHERS_AND_DRYERS, care_line, choose, get, history_line, name, twin_dos_line,
 };
 use std::io::Write;
 use std::sync::atomic::AtomicBool;
@@ -223,9 +223,6 @@ fn care() -> Result<()> {
     }
     Ok(())
 }
-
-/// Washer, tumble dryer, washer-dryer: the types Miele keeps a run history for.
-const WASHERS_AND_DRYERS: [i64; 3] = [1, 2, 24];
 
 /// Miele answers 403 until statistics are switched on for the appliance. `get` keeps only the
 /// status text, not the body, so a bare 403 counts too.
