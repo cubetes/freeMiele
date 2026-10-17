@@ -22,7 +22,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Log in to your Miele account (once); the login is kept in the macOS Keychain
+    /// Log in to your Miele account (once); the login is kept in your system's password store
     Login,
     /// Log out: end the login at Miele and delete it from the Keychain
     Logout,

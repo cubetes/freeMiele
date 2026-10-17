@@ -14,3 +14,4 @@ crates/app/gen/
 .claude/r4/
 docs/superpowers/
 .DS_Store
+.claude/r5/
