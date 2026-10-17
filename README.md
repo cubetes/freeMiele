@@ -69,7 +69,8 @@ miele off
 miele brew             # lists the drinks your machine offers
 miele brew flat white
 miele brew --device CM6160 espresso   # pick the appliance by name or model if you have several
-miele care             # how often your coffee machine has been cleaned, and the care schedule
+miele care             # how often your coffee machine has been cleaned, and the care schedule; TwinDos levels of your washer
+miele history          # last runs of your washer or dryer
 miele usage            # water and energy history (needs Data Act access from Miele, see below)
 miele usage --runs     # the latest runs
 miele dump             # raw appliance data for a support report, serial numbers removed

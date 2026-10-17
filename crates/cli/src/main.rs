@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand};
 use freemiele::dataact::{self, Appliance, Consumption, Refused, Run};
 use freemiele::{
-    Actions, CARE_SCHEDULE, COFFEE_MACHINE, Devices, FillingLevels, Outcome, Program, Result,
-    Session, care_line, choose, get, name,
+    Actions, CARE_SCHEDULE, COFFEE_MACHINE, Devices, FillingLevels, LastRun, Outcome, Program,
+    Result, Session, care_line, choose, get, history_line, name, twin_dos_line,
 };
 use std::io::Write;
 use std::sync::atomic::AtomicBool;
@@ -30,8 +30,14 @@ enum Cmd {
     Watch,
     /// Print raw appliance data as JSON for a support report; serial numbers and names are removed
     Dump,
-    /// How often your coffee machine has been cleaned, and the care schedule
+    /// Coffee machine: how often it has been cleaned, and the care schedule. Washer: TwinDos levels
     Care,
+    /// The last runs of your washer or dryer
+    History {
+        /// Which appliance, by name or model; needed if several qualify
+        #[arg(long)]
+        device: Option<String>,
+    },
     /// Water and energy use per week and month (needs Miele's Data Act access)
     Usage {
         /// Show the latest runs instead
@@ -89,6 +95,7 @@ fn run(cmd: Cmd) -> Result<()> {
             })
         }
         Cmd::Care => care(),
+        Cmd::History { device } => history(device.as_deref()),
         Cmd::Usage { runs } => usage(runs),
         Cmd::Dump => {
             println!(
@@ -201,8 +208,65 @@ fn care() -> Result<()> {
         );
         println!("{CARE_SCHEDULE}");
     }
+    for (id, d) in devices
+        .iter()
+        .filter(|(_, d)| d.ident.kind.value_raw != COFFEE_MACHINE)
+    {
+        let levels: Result<FillingLevels> = get(&token, &format!("/devices/{id}/fillingLevels"));
+        if let Some(line) = levels.ok().as_ref().and_then(twin_dos_line) {
+            found = true;
+            println!("{}\n  {line}", name(d));
+        }
+    }
     if !found {
-        println!("No coffee machine on this Miele account.");
+        println!("Nothing to show: no coffee machine or TwinDos washer on this Miele account.");
+    }
+    Ok(())
+}
+
+/// Washer, tumble dryer, washer-dryer: the types Miele keeps a run history for.
+const WASHERS_AND_DRYERS: [i64; 3] = [1, 2, 24];
+
+/// Miele answers 403 until statistics are switched on for the appliance. `get` keeps only the
+/// status text, not the body, so a bare 403 counts too.
+fn consent_missing(e: &dyn std::error::Error) -> bool {
+    let text = e.to_string();
+    text.contains("MISSING_CONSENT") || text.contains("403 Forbidden")
+}
+
+fn history(device: Option<&str>) -> Result<()> {
+    let token = token()?;
+    let devices: Devices = get(&token, "/devices")?;
+    let candidates: Vec<_> = devices
+        .iter()
+        .filter(|(_, d)| WASHERS_AND_DRYERS.contains(&d.ident.kind.value_raw))
+        .map(|(id, d)| (id.as_str(), d))
+        .collect();
+    if candidates.is_empty() {
+        println!("No washer or dryer on this Miele account.");
+        return Ok(());
+    }
+    let chosen;
+    let shown = match device {
+        Some(_) => {
+            chosen = [choose(&candidates, device)?];
+            &chosen[..]
+        }
+        None => &candidates[..],
+    };
+    let offset = utc_offset();
+    for (id, d) in shown {
+        println!("{}", name(d));
+        match get::<Vec<LastRun>>(&token, &format!("/devices/{id}/lastUsedPrograms")) {
+            Ok(runs) if runs.is_empty() => println!("  No runs recorded yet."),
+            Ok(runs) => runs
+                .iter()
+                .for_each(|r| println!("  {}", history_line(r, offset))),
+            Err(e) if consent_missing(e.as_ref()) => println!(
+                "  Miele needs your consent first: in the Miele app, turn on statistics for this appliance."
+            ),
+            Err(e) => return Err(e),
+        }
     }
     Ok(())
 }
@@ -319,4 +383,23 @@ fn login() -> Result<()> {
     Session::login(client_id.trim().to_string(), client_secret, &code)?.save()?;
     println!("Logged in. Try `miele status`.");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::consent_missing;
+
+    #[test]
+    fn consent_is_found_in_a_403_only() {
+        let e = |m: &str| std::io::Error::other(m.to_string());
+        assert!(consent_missing(&e(
+            r#"Miele refused (403 Forbidden): {"code":"MISSING_CONSENT"}"#
+        )));
+        assert!(consent_missing(&e(
+            "HTTP status client error (403 Forbidden) for url"
+        )));
+        assert!(!consent_missing(&e(
+            "HTTP status client error (404 Not Found)"
+        )));
+    }
 }
