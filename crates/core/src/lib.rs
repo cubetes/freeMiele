@@ -479,7 +479,7 @@ pub fn details(d: &Device) -> Option<String> {
 
 /// The compartment temperatures of a fridge, freezer or wine unit, e.g. "4 °C / -18 °C".
 /// Unused compartments are skipped; None for other appliances or when none is reported.
-fn compartments(d: &Device) -> Option<String> {
+pub fn compartments(d: &Device) -> Option<String> {
     // Off or not connected: any numbers left are old readings.
     if !COOLERS.contains(&d.ident.kind.value_raw) || [1, 255].contains(&d.state.status.value_raw) {
         return None;
@@ -513,13 +513,8 @@ pub fn status_line(d: &Device) -> String {
     if let Some(temps) = compartments(d) {
         line += &format!(" · {temps}");
     }
-    if status == WAITING_TO_START {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |t| t.as_secs() as i64);
-        if let Some(at) = starts_at(&d.state.start_time, now + utc_offset()) {
-            line += &format!(", starts at {at}");
-        }
+    if let Some(at) = start_at(d) {
+        line += &format!(", starts at {at}");
     }
     let [h, m] = d.state.remaining_time;
     if h + m > 0 && status != END {
@@ -539,6 +534,17 @@ pub fn status_line(d: &Device) -> String {
         line += " — needs attention: check the machine's display";
     }
     line
+}
+
+/// "14:30" when an appliance waits for a delayed start; None otherwise.
+pub fn start_at(d: &Device) -> Option<String> {
+    if d.state.status.value_raw != WAITING_TO_START {
+        return None;
+    }
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |t| t.as_secs() as i64);
+    starts_at(&d.state.start_time, now + utc_offset())
 }
 
 /// "14:30": the local clock time `start` ([hours, minutes]) after `now` (local seconds since 1970).
@@ -763,7 +769,7 @@ pub const DISHWASHER: i64 = 7;
 pub const WASHERS_AND_DRYERS: [i64; 3] = [WASHING_MACHINE, TUMBLE_DRYER, WASHER_DRYER];
 /// Fridge, freezer, fridge-freezer and the wine units (cabinet, conditioning, storage
 /// conditioning, cabinet-freezer), numbered as in Miele's API docs.
-const COOLERS: [i64; 7] = [19, 20, 21, 32, 33, 34, 68];
+pub const COOLERS: [i64; 7] = [19, 20, 21, 32, 33, 34, 68];
 /// `State.status.value_raw` of a finished program.
 pub const END: i64 = 7;
 /// `State.status.value_raw` of a programme set to start later.

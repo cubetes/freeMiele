@@ -11,7 +11,7 @@
 html,body{margin:0;background:transparent}
 body{--body:'FM Digits','Atkinson Hyperlegible Next','Atkinson Hyperlegible',system-ui,sans-serif;--display:'Schibsted Grotesk','Helvetica Neue',sans-serif;font-family:var(--body);font-size:13px;line-height:18px;color:var(--ink);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;cursor:default;user-select:none}
 /* The window is the glass (native vibrancy behind it): the panel only adds the inset and the radius. */
-.panel{width:340px;box-sizing:border-box;padding:8px;display:flex;flex-direction:column;gap:8px;border-radius:20px}
+.panel{width:340px;max-height:100vh;box-sizing:border-box;padding:8px;display:flex;flex-direction:column;gap:8px;border-radius:20px}
 @media (prefers-reduced-transparency:reduce){.panel{background:var(--surface)}}
 .head{display:flex;align-items:center;gap:8px;height:28px;padding:2px 2px 0 8px}
 .name{font-family:var(--display);font-weight:700;font-size:15px}
@@ -20,7 +20,7 @@ body{--body:'FM Digits','Atkinson Hyperlegible Next','Atkinson Hyperlegible',sys
 .icon-btn{width:28px;height:28px;border-radius:999px;border:none;background:transparent;display:grid;place-items:center;padding:0;color:var(--ink)}
 .icon-btn:hover{background:var(--track)}
 .icon-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
-.cards{display:flex;flex-direction:column;gap:8px}
+.cards{display:flex;flex-direction:column;gap:8px;min-height:0;overflow-y:auto;overscroll-behavior:contain}
 .card{display:grid;grid-template-columns:44px 1fr;column-gap:12px;row-gap:10px;padding:12px;border-radius:12px;background:var(--raised);border:0.5px solid var(--line)}
 .card>:not(.ring):not(.body){grid-column:1/-1}
 .card.attention{border:1px solid var(--attention)}

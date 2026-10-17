@@ -5,8 +5,9 @@
 mod settings;
 
 use freemiele::{
-    COFFEE_MACHINE, Device, Devices, END, FillingLevels, NOT_LOGGED_IN, Outcome, Program, Rejected,
-    Session, TUMBLE_DRYER, WASHERS_AND_DRYERS, activity, find_program, get,
+    COFFEE_MACHINE, COOLERS, DISHWASHER, Device, Devices, END, FillingLevels, NOT_LOGGED_IN,
+    Outcome, Program, Rejected, Session, TUMBLE_DRYER, WASHERS_AND_DRYERS, activity, compartments,
+    find_program, get, start_at,
 };
 use serde::{Deserialize, Serialize};
 use settings::Settings;
@@ -171,15 +172,21 @@ fn card(id: &str, d: &Device) -> Card {
     let left = (h + m > 0 && status != END).then(|| time_left(s.remaining_time));
     let mobile_off = s.remote_enable.full_remote_control && !s.remote_enable.mobile_start;
     let attention = freemiele::needs_attention(d);
+    let kind = d.ident.kind.value_raw;
+    // A fridge is "in use" all the time: that is its calm, normal state.
+    let cooling = COOLERS.contains(&kind) && status == IN_USE;
     let tone = match status {
         _ if s.signal_failure => "fault",
         1 | NOT_CONNECTED => "off",
+        _ if cooling => "ready",
         IN_USE => "running",
         _ if attention || mobile_off => "attention",
         _ => "ready",
     };
+    let starts = start_at(d);
     let mut chip = match status {
         END => "Finished".to_string(),
+        _ if cooling => "On".to_string(),
         _ => s.status.value_localized.clone(),
     };
     let base = match status {
@@ -189,11 +196,15 @@ fn card(id: &str, d: &Device) -> Card {
             .or_else(|| program.clone())
             .unwrap_or_else(|| s.status.value_localized.clone()),
     };
-    let mut title = match &left {
-        Some(left) => format!("{base} · {left} left"),
-        None => base,
+    let mut title = match (&left, &starts, compartments(d)) {
+        (_, Some(at), _) => format!("Starts at {at}"),
+        (_, _, Some(temps)) => temps,
+        (Some(left), ..) => format!("{base} · {left} left"),
+        _ => base,
     };
-    let mut sub = if phase.is_some() || status == END {
+    let mut sub = if starts.is_some() {
+        program.clone()
+    } else if phase.is_some() || status == END {
         match (program, freemiele::details(d)) {
             (Some(p), Some(more)) => Some(format!("{p} · {more}")),
             (p, more) => p.or(more),
@@ -243,7 +254,6 @@ fn card(id: &str, d: &Device) -> Card {
     let total = done + h * 60 + m;
     let progress = (status == IN_USE && d.ident.kind.value_raw != COFFEE_MACHINE && total > 0)
         .then(|| (done * 100 / total) as u8);
-    let kind = d.ident.kind.value_raw;
     // A washer-dryer says "drying" in its phase; a dryer always dries.
     let dries = kind == TUMBLE_DRYER
         || phase
@@ -254,13 +264,17 @@ fn card(id: &str, d: &Device) -> Card {
         1 => "power",
         _ if s.signal_failure || attention => "attention",
         END => "finished",
+        _ if COOLERS.contains(&kind) => "fridge",
         IN_USE if kind == COFFEE_MACHINE => coffee_icon(s.program_id.value_raw),
+        IN_USE if kind == DISHWASHER => "dishwashing",
+        _ if kind == DISHWASHER => "dishwasher",
         IN_USE if dries => "drying",
         IN_USE => "washing",
         _ if kind == COFFEE_MACHINE => "machine",
         _ => "washer",
     };
-    let has_care = kind == COFFEE_MACHINE || WASHERS_AND_DRYERS.contains(&kind);
+    let has_care =
+        kind == COFFEE_MACHINE || kind == DISHWASHER || WASHERS_AND_DRYERS.contains(&kind);
     Card {
         id: if has_care {
             id.to_string()
@@ -517,6 +531,7 @@ async fn care(device_id: String) -> Result<Option<String>, String> {
         let f: FillingLevels = get(token, &format!("/devices/{device_id}/fillingLevels"))?;
         Ok(freemiele::care_line(&f)
             .or_else(|| freemiele::twin_dos_line(&f))
+            .or_else(|| freemiele::dishwasher_line(&f))
             .map(|line| line.trim().to_string()))
     })
     .await
@@ -581,9 +596,21 @@ fn other_drinks(
     shown
 }
 
-/// The page tells us how tall its content is.
+/// The page tells us how tall its content is. Never taller than the room left on the screen
+/// below the panel (above the Dock): the list scrolls instead.
 #[tauri::command]
 fn fit(window: WebviewWindow, height: f64) {
+    let room = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .zip(window.outer_position().ok())
+        .map(|(m, top)| {
+            let area = m.work_area();
+            let bottom = area.position.y as f64 + area.size.height as f64;
+            (bottom - top.y as f64) / m.scale_factor() - 8.0
+        });
+    let height = room.map_or(height, |r| height.min(r.max(120.0)));
     let _ = window.set_size(LogicalSize::new(340.0, height));
 }
 
@@ -1126,6 +1153,25 @@ mod tests {
         assert_eq!(coffee_icon(Some(24999)), "brewing");
         assert_eq!(coffee_icon(None), "brewing");
         assert_eq!(card_of(&washer()).icon, "washing");
+    }
+
+    #[test]
+    fn dishwasher_and_fridge_cards() {
+        let dish: Devices = serde_json::from_str(include_str!(
+            "../../../fixtures/devices.dishwasher-waiting.sample.json"
+        ))
+        .unwrap();
+        let c = card("000000000007", &dish["000000000007"]);
+        assert!(c.title.starts_with("Starts at "), "{}", c.title);
+        assert_eq!(c.sub.as_deref(), Some("ECO"));
+        assert_eq!((c.icon, c.id.as_str()), ("dishwasher", "000000000007"));
+        let fridge: Devices = serde_json::from_str(include_str!(
+            "../../../fixtures/devices.fridge-freezer.sample.json"
+        ))
+        .unwrap();
+        let c = card("000000000021", &fridge["000000000021"]);
+        assert_eq!((c.title.as_str(), c.chip.as_str()), ("4 °C / -18 °C", "On"));
+        assert_eq!((c.icon, c.tone, c.progress), ("fridge", "ready", None));
     }
 
     #[test]
