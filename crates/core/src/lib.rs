@@ -678,7 +678,7 @@ pub fn history_line(r: &LastRun, offset: i64) -> String {
 /// `Ident.kind.value_raw` of a coffee machine.
 pub const COFFEE_MACHINE: i64 = 17;
 const WASHING_MACHINE: i64 = 1;
-const TUMBLE_DRYER: i64 = 2;
+pub const TUMBLE_DRYER: i64 = 2;
 const WASHER_DRYER: i64 = 24;
 /// The types Miele keeps a run history for, and that report spin speed and temperature.
 pub const WASHERS_AND_DRYERS: [i64; 3] = [WASHING_MACHINE, TUMBLE_DRYER, WASHER_DRYER];
