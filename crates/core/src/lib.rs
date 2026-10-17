@@ -687,8 +687,10 @@ pub struct FillingLevels {
 pub struct LastRun {
     #[serde(rename = "ProgramID")]
     pub program_id: Reading,
-    pub start_at: String,
-    pub end_at: String,
+    #[serde(default)]
+    pub start_at: Option<String>,
+    #[serde(default)]
+    pub end_at: Option<String>,
 }
 
 /// "Mon 2 Mar 18:00 · Rinse out lint · 8 min": start in local time at `offset` seconds from UTC.
@@ -701,14 +703,19 @@ pub fn history_line(r: &LastRun, offset: i64) -> String {
         (_, code) => format!("Programme {}", code.map_or("?".into(), |c| c.to_string())),
     };
     let mut parts = Vec::new();
-    if let (Some(start), Some((_, mo, d, h, mi))) = (epoch(&r.start_at), local(&r.start_at, offset))
-    {
+    if let (Some(start), Some((_, mo, d, h, mi))) = (
+        r.start_at.as_deref().and_then(epoch),
+        r.start_at.as_deref().and_then(|s| local(s, offset)),
+    ) {
         let weekday = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"]
             [(start + offset).div_euclid(86400).rem_euclid(7) as usize];
         parts.push(format!("{weekday} {d} {} {h:02}:{mi:02}", MONTHS[mo - 1]));
     }
     parts.push(name);
-    if let (Some(a), Some(b)) = (epoch(&r.start_at), epoch(&r.end_at)) {
+    let at = |t: &Option<String>| t.as_deref().and_then(epoch);
+    if let (Some(a), Some(b)) = (at(&r.start_at), at(&r.end_at))
+        && b >= a
+    {
         let mins = (b - a + 30) / 60;
         parts.push(match mins {
             0..60 => format!("{mins} min"),
@@ -741,7 +748,6 @@ pub fn care_line(f: &FillingLevels) -> Option<String> {
     (!parts.is_empty()).then(|| format!("  Care so far: {}", parts.join(" · ")))
 }
 
-/// Our own short summary of the owner's manual care table, printed under each coffee machine.
 /// "TwinDos: 1 empty · 2 28%" for washers with automatic dosing; None without TwinDos.
 pub fn twin_dos_line(f: &FillingLevels) -> Option<String> {
     let tanks = [
@@ -758,6 +764,7 @@ pub fn twin_dos_line(f: &FillingLevels) -> Option<String> {
     (!parts.is_empty()).then(|| format!("TwinDos: {}", parts.join(" · ")))
 }
 
+/// Our own short summary of the owner's manual care table, printed under each coffee machine.
 pub const CARE_SCHEDULE: &str =
     "  When the machine asks: descale; degrease the brew unit (1 cleaning tablet)
   Every day: empty the drip tray and waste container, clean the milk flask and siphon
@@ -1258,6 +1265,15 @@ mod tests {
         assert_eq!(lines[0], "Mon 2 Mar 18:00 · Rinse out lint · 8 min");
         assert_eq!(lines[1], "Mon 2 Mar 16:30 · Warm air · 46 min");
         assert_eq!(lines[2], "Sun 1 Mar 09:05 · Automatic plus · 1 h 34 min");
+        // No end, or an end before the start: no duration rather than an error or a negative one.
+        let odd: Vec<LastRun> = serde_json::from_str(
+            r#"[{"ProgramID":{"value_raw":31,"value_localized":"Automatic plus"},"startAt":"2026-03-01T08:05:00Z"},
+                {"ProgramID":{"value_raw":31,"value_localized":"Automatic plus"},"startAt":"2026-03-01T08:05:00Z","endAt":"2026-03-01T08:00:00Z"}]"#,
+        )
+        .unwrap();
+        for r in &odd {
+            assert_eq!(history_line(r, 3600), "Sun 1 Mar 09:05 · Automatic plus");
+        }
     }
 
     #[test]

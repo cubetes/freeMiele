@@ -6,7 +6,7 @@ mod settings;
 
 use freemiele::{
     COFFEE_MACHINE, Device, Devices, END, FillingLevels, NOT_LOGGED_IN, Outcome, Program, Rejected,
-    Session, activity, find_program, get,
+    Session, WASHERS_AND_DRYERS, activity, find_program, get,
 };
 use serde::{Deserialize, Serialize};
 use settings::Settings;
@@ -41,7 +41,7 @@ fn not_in_demo() -> Result<(), String> {
 /// What the page draws for one appliance.
 #[derive(Serialize, Clone, PartialEq, Debug)]
 struct Card {
-    /// The appliance id; empty for the login and offline cards.
+    /// The appliance id when it has care data to show (coffee machine, washer, dryer); else empty.
     id: String,
     /// "Coffee machine · CM6160"
     label: String,
@@ -208,8 +208,14 @@ fn card(id: &str, d: &Device) -> Card {
     let total = done + h * 60 + m;
     let progress = (status == IN_USE && d.ident.kind.value_raw != COFFEE_MACHINE && total > 0)
         .then(|| (done * 100 / total) as u8);
+    let kind = d.ident.kind.value_raw;
+    let has_care = kind == COFFEE_MACHINE || WASHERS_AND_DRYERS.contains(&kind);
     Card {
-        id: id.to_string(),
+        id: if has_care {
+            id.to_string()
+        } else {
+            String::new()
+        },
         label: format!(
             "{} · {}",
             d.ident.kind.value_localized, d.ident.device_ident_label.tech_type

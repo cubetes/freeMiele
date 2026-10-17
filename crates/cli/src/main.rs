@@ -210,7 +210,7 @@ fn care() -> Result<()> {
     }
     for (id, d) in devices
         .iter()
-        .filter(|(_, d)| d.ident.kind.value_raw != COFFEE_MACHINE)
+        .filter(|(_, d)| WASHERS_AND_DRYERS.contains(&d.ident.kind.value_raw))
     {
         let levels: Result<FillingLevels> = get(&token, &format!("/devices/{id}/fillingLevels"));
         if let Some(line) = levels.ok().as_ref().and_then(twin_dos_line) {
