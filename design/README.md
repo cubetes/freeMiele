@@ -92,7 +92,7 @@ Each card's icon sits in a 44px ring. The ring backs up the chip word; it never 
 | Running, with progress | `crema` arc over a `line` track |
 | Running, no progress (coffee, rinse) | quarter arc turning once every 1.6 s |
 | Finished | full `brand` |
-| Needs attention, Fault | ring with a gap, in `attention` or `fault`; the card gets an `attention` edge |
+| Needs attention, Fault | ring with a gap, in `attention` or `fault`; a Needs attention card also gets an `attention` edge (red stays small) |
 | Not connected | dotted `ink-muted` |
 
 - Only a running ring is a `progressbar`. With progress it carries a value and text such as "62 percent done, 23 minutes left". Without, it has a label only. Every other ring is hidden from screen readers.

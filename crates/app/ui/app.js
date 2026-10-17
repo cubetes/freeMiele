@@ -63,8 +63,10 @@ const icon = (k) => `<svg width="20" height="20" viewBox="0 0 20 20" fill="none"
 // The loops start at a point set by the clock, so a redraw (which rebuilds everything) never jumps.
 const phase = (ms) => `-${Date.now() % ms}ms`;
 let openedAt = null; // when the panel last opened with cards; the arc grows only then
-const prev = new Map(); // label -> chip word at the last draw
-const changedAt = new Map(); // label -> when its chip word last changed
+const prev = new Map(); // card key -> chip word at the last draw
+const changedAt = new Map(); // card key -> when its chip word last changed
+// Two identical appliances share a label, so the key adds the card's place in the (sorted) list.
+const key = (c, i) => `${i}:${c.label}`;
 const said = document.getElementById('said');
 const TONE = { ready: 'brand', running: 'crema', attention: 'attention', fault: 'fault', off: 'muted' };
 
@@ -91,6 +93,7 @@ function ring(c) {
   if (running && c.progress != null) {
     const m = c.minutes_left;
     r.setAttribute('role', 'progressbar');
+    r.setAttribute('aria-label', c.label);
     r.setAttribute('aria-valuemin', 0);
     r.setAttribute('aria-valuemax', 100);
     r.setAttribute('aria-valuenow', c.progress);
@@ -282,16 +285,17 @@ function render(cards) {
   if (openedAt === null && cards.length) openedAt = Date.now();
   // Motion only when a chip word changes; one polite announcement for those changes, nothing else.
   const spoken = [];
-  for (const c of cards) {
-    if (prev.has(c.label) && prev.get(c.label) !== c.chip) {
-      changedAt.set(c.label, Date.now());
+  cards.forEach((c, i) => {
+    const k = key(c, i);
+    if (prev.has(k) && prev.get(k) !== c.chip) {
+      changedAt.set(k, Date.now());
       spoken.push(`${c.label}: ${c.chip}`);
     }
-    prev.set(c.label, c.chip);
-  }
+    prev.set(k, c.chip);
+  });
   if (spoken.length) said.textContent = spoken.join('. ');
-  list.replaceChildren(...cards.map((c) => {
-    const since = Date.now() - (changedAt.get(c.label) ?? 0);
+  list.replaceChildren(...cards.map((c, i) => {
+    const since = Date.now() - (changedAt.get(key(c, i)) ?? 0);
     const card = el('article', ['card', c.tone === 'attention' && 'attention', c.icon === 'finished' && 'finished', since < 2500 && 'chg'].filter(Boolean).join(' '));
     card.style.setProperty('--age', `${since}ms`); // a redraw mid-motion carries on, it does not restart
     const meta = el('div', 'meta');

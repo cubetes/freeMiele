@@ -52,7 +52,7 @@ body{--body:'FM Digits','Atkinson Hyperlegible Next','Atkinson Hyperlegible',sys
 .heat.d2{animation-delay:calc(var(--d24) + .4s)}
 .drum{transform-origin:10px 11.5px;animation:spin 4s linear infinite;animation-delay:var(--d40)}
 .chg .tick{stroke-dasharray:20;animation:draw .7s ease-out calc(.3s - var(--age)) both}
-.chg .pulse{animation:pulse 1.8s ease-in-out calc(0s - var(--age)) 3}
+.chg .pulse{animation:pulse 1.2s ease-in-out calc(0s - var(--age)) 2}
 @keyframes grow{from{stroke-dasharray:0 100}}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes drop{0%{transform:translateY(-2px);opacity:0}30%{opacity:1}100%{transform:translateY(3px);opacity:0}}
