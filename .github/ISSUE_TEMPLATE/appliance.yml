@@ -39,6 +39,11 @@ body:
       label: Reply of GET /devices/{id}/programs (optional)
       render: json
   - type: textarea
+    id: display
+    attributes:
+      label: If `status` showed a code, what did the machine's display say at that moment?
+      description: e.g. `programme 24760` and the display said "Rinsing". This is how names get confirmed.
+  - type: textarea
     id: notes
     attributes:
       label: Anything else

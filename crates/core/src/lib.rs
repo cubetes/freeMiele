@@ -1,4 +1,5 @@
 pub mod dataact;
+mod names;
 
 use reqwest::Url;
 use serde::de::DeserializeOwned;
@@ -59,6 +60,9 @@ pub struct State {
     pub program_id: Reading,
     #[serde(default)]
     pub program_phase: Reading,
+    // e.g. 4 = "Cleaning/Care programme"; used when a programme has no name.
+    #[serde(default)]
+    pub program_type: Reading,
     // Washers and dryers; value_raw is null when the programme has no spin speed.
     #[serde(default)]
     pub spinning_speed: Reading,
@@ -405,93 +409,52 @@ pub fn needs_attention(d: &Device) -> bool {
             && d.state.program_id.value_raw == Some(CHECK_APPLIANCE))
 }
 
-// Codes from Home Assistant's Miele integration (Apache-2.0): homeassistant/components/miele/const.py
-fn coffee_program_name(code: i64) -> Option<&'static str> {
-    Some(match code {
-        24750 | 24759 | 24773 | 24787 | 24788 => "Rinsing the machine",
-        24758 => "Intermediate rinsing",
-        24778 => "Automatic maintenance",
-        24751 => "Descaling",
-        24753 => "Degreasing the brew unit",
-        24754 => "Rinsing the milk pipework",
-        24789 => "Cleaning the milk pipework",
-        24575 => "Descaling counter",
-        24576 => "Degreasing counter",
-        16016
-        | 16018
-        | 16019
-        | 16020
-        | 16021
-        | 16027
-        | 16033
-        | 16035
-        | 16037
-        | 24500
-        | 24502..=24504
-        | 24506
-        | 24513
-        | 24516
-        | 24537
-        | 24542
-        | 24549..=24558
-        | 24560
-        | 24562..=24569
-        | 24571..=24574
-        | 24800
-        | 24801
-        | 24813 => "Settings",
-        _ => return None,
-    })
-}
-
-fn coffee_phase_name(code: i64) -> Option<&'static str> {
-    Some(match code {
-        3073 => "Heating up",
-        4353 => "Espresso",
-        4354 => "Hot milk",
-        4355 => "Milk foam",
-        4361 | 4404 => "Dispensing",
-        4369 => "Pre-brewing",
-        4377 => "Grinding",
-        4385 => "Second espresso",
-        4393 => "Second pre-brewing",
-        4401 => "Second grinding",
-        4405 => "Rinse",
-        _ => return None, // 0, 4352, 65535 = not running
-    })
-}
-
-type NameOf = fn(i64) -> Option<&'static str>;
-
-/// The API's own text if it has one, else our name for the code.
-fn reading_text(r: &Reading, ours: NameOf) -> Option<String> {
-    match r.value_localized.as_deref() {
-        Some(t) if !t.is_empty() => Some(t.to_string()),
-        _ => ours(r.value_raw?).map(String::from),
-    }
-}
-
 /// The programme and phase of an appliance at work, e.g. ("Sportswear", "Main wash").
-/// None when it is off, not connected or has no names we know. No phase once it has finished.
+/// Each is Miele's own text, else our name for the code (with the code, unless confirmed), else
+/// for a programme the programme type text, else the raw code: unknown codes stay visible.
+/// None when it is off, not connected or the code means "not running". No phase once finished.
 pub fn activity(d: &Device) -> (Option<String>, Option<String>) {
     let status = d.state.status.value_raw;
-    // Coffee machines need our names; washers and dryers send their own text.
-    let names: Option<(NameOf, NameOf)> = match d.ident.kind.value_raw {
-        COFFEE_MACHINE => Some((coffee_program_name, coffee_phase_name)),
-        WASHING_MACHINE | TUMBLE_DRYER | WASHER_DRYER => Some((|_| None, |_| None)),
-        _ => None,
-    };
+    let kind = d.ident.kind.value_raw;
     // 1 = Off (0 is unused but treated the same), 255 = Not connected
-    let Some((program_name, phase_name)) = names else {
-        return (None, None);
-    };
     if [0, 1, 255].contains(&status) {
         return (None, None);
     }
+    let show = |r: &Reading,
+                ours: fn(i64, i64) -> Option<&'static str>,
+                raw: &str,
+                fallback: Option<String>| {
+        if let Some(t) = r.value_localized.as_deref().filter(|t| !t.is_empty()) {
+            return Some(t.to_string());
+        }
+        let code = r.value_raw?;
+        if let Some(n) = names::confirmed_name(kind, code) {
+            return Some(n.to_string());
+        }
+        match ours(kind, code) {
+            Some("") => None,
+            Some(n) => Some(format!("{n} ({code})")),
+            None => {
+                fallback.or_else(|| (code > 0 && code != 65535).then(|| format!("{raw} {code}")))
+            }
+        }
+    };
+    let program_type = d
+        .state
+        .program_type
+        .value_localized
+        .clone()
+        .filter(|t| !t.is_empty());
     let phase = (status != END)
-        .then(|| reading_text(&d.state.program_phase, phase_name))
+        .then(|| show(&d.state.program_phase, names::phase_name, "phase", None))
         .flatten();
-    (reading_text(&d.state.program_id, program_name), phase)
+    let program = show(
+        &d.state.program_id,
+        names::program_name,
+        "programme",
+        program_type,
+    );
+    (program, phase)
 }
 
 /// The programme settings of a washer or dryer at work, e.g. "40 °C · 1200 rpm".
@@ -527,11 +490,10 @@ pub fn details(d: &Device) -> Option<String> {
 pub fn status_line(d: &Device) -> String {
     let mut line = format!("{}: {}", name(d), d.state.status.value_localized);
     let status = d.state.status.value_raw;
-    if let (Some(program), phase) = activity(d) {
-        line += &format!(", {program}");
-        if let Some(phase) = phase {
-            line += &format!(" · {phase}");
-        }
+    let (program, phase) = activity(d);
+    let shown: Vec<_> = [program, phase].into_iter().flatten().collect();
+    if !shown.is_empty() {
+        line += &format!(", {}", shown.join(" · "));
         if let Some(details) = details(d) {
             line += &format!(" ({details})");
         }
@@ -698,9 +660,13 @@ pub fn history_line(r: &LastRun, offset: i64) -> String {
     use dataact::{MONTHS, epoch, local};
     let name = match (&r.program_id.value_localized, r.program_id.value_raw) {
         (Some(t), _) if !t.is_empty() => t.clone(),
-        // Name from Home Assistant's Miele integration (Apache-2.0)
-        (_, Some(48)) => "Rinse out lint".into(),
-        (_, code) => format!("Programme {}", code.map_or("?".into(), |c| c.to_string())),
+        (_, code) => code
+            .and_then(|c| names::program_name(WASHER_DRYER, c))
+            .filter(|n| !n.is_empty())
+            .map_or_else(
+                || format!("Programme {}", code.map_or("?".into(), |c| c.to_string())),
+                String::from,
+            ),
     };
     let mut parts = Vec::new();
     if let (Some(start), Some((_, mo, d, h, mi))) = (
@@ -1195,8 +1161,14 @@ mod tests {
         // A drink: the API's own name, plus our phase.
         let line = set(d, 5, 24000, "coffee", 4377);
         assert!(line.starts_with("CM6160 Coffee Machine: In use, coffee · Grinding"));
-        // Unknown drink without a name: nothing added.
-        assert!(set(d, 5, 24000, "", 4377).starts_with("CM6160 Coffee Machine: In use (mobile"));
+        // Our table name that nobody confirmed: shown with its code.
+        let line = set(d, 5, 24750, "", 4377);
+        assert!(
+            line.starts_with("CM6160 Coffee Machine: In use, Appliance rinse (24750) · Grinding")
+        );
+        // Unknown codes stay visible as raw codes.
+        let line = set(d, 5, 24760, "", 4410);
+        assert!(line.starts_with("CM6160 Coffee Machine: In use, programme 24760 · phase 4410"));
         // Off stays as it was.
         assert!(set(d, 0, 24753, "", 4352).starts_with("CM6160 Coffee Machine: Off (mobile"));
     }
@@ -1220,6 +1192,41 @@ mod tests {
             status_line(d),
             "WTR860 Washer dryer: Finished, Sportswear (40 °C · 1200 rpm) (mobile start off)"
         );
+    }
+
+    #[test]
+    fn unnamed_washer_programme_uses_its_type() {
+        let mut devices: Devices = serde_json::from_str(include_str!(
+            "../../../fixtures/devices.washer-running.sample.json"
+        ))
+        .unwrap();
+        let d = devices.get_mut("000000000024").unwrap();
+        // Code we have no name for, no text from Miele: the programme type (#31).
+        d.state.program_id = Reading {
+            value_raw: Some(9999),
+            value_localized: Some("".into()),
+        };
+        d.state.program_type = Reading {
+            value_raw: Some(4),
+            value_localized: Some("Cleaning/Care programme".into()),
+        };
+        d.state.program_phase.value_localized = Some("Rinse out fluff".into());
+        assert!(status_line(d).starts_with(
+            "WTR860 Washer dryer: In use, Cleaning/Care programme · Rinse out fluff (40 °C"
+        ));
+        d.state.status = Value {
+            value_raw: 7,
+            value_localized: "Finished".into(),
+        };
+        assert!(
+            status_line(d).starts_with("WTR860 Washer dryer: Finished, Cleaning/Care programme (")
+        );
+        // No type text either: the raw code.
+        d.state.program_type = Reading::default();
+        assert!(status_line(d).contains("Finished, programme 9999"));
+        // Washer-dryer 48 has a table name, shown with its code.
+        d.state.program_id.value_raw = Some(48);
+        assert!(status_line(d).contains("Finished, Rinse out lint (48)"));
     }
 
     #[test]
