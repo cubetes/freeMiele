@@ -675,7 +675,7 @@ pub struct FillingLevels {
     pub descaling_counter: Option<i64>,
     pub degreasing_counter: Option<i64>,
     pub milk_cleaning_counter: Option<i64>,
-    // Unit not confirmed yet (maybe percent), so nothing shows them.
+    // Percent full (the owner's WTR860: 0 = empty tank).
     pub twin_dos_container1_filling_level: Option<i64>,
     pub twin_dos_container2_filling_level: Option<i64>,
 }
@@ -740,6 +740,22 @@ pub fn care_line(f: &FillingLevels) -> Option<String> {
 }
 
 /// Our own short summary of the owner's manual care table, printed under each coffee machine.
+/// "TwinDos: 1 empty · 2 28%" for washers with automatic dosing; None without TwinDos.
+pub fn twin_dos_line(f: &FillingLevels) -> Option<String> {
+    let tanks = [
+        f.twin_dos_container1_filling_level,
+        f.twin_dos_container2_filling_level,
+    ];
+    let parts: Vec<_> = (1..)
+        .zip(tanks)
+        .filter_map(|(i, level)| match level? {
+            0 => Some(format!("{i} empty")),
+            n => Some(format!("{i} {n}%")),
+        })
+        .collect();
+    (!parts.is_empty()).then(|| format!("TwinDos: {}", parts.join(" · ")))
+}
+
 pub const CARE_SCHEDULE: &str =
     "  When the machine asks: descale; degrease the brew unit (1 cleaning tablet)
   Every day: empty the drip tray and waste container, clean the milk flask and siphon
@@ -1212,6 +1228,22 @@ mod tests {
         let coffee: Devices =
             serde_json::from_str(include_str!("../../../fixtures/devices.sample.json")).unwrap();
         assert_eq!(details(&coffee["000123456789"]), None);
+    }
+
+    #[test]
+    fn twin_dos_line_says_empty_and_percent() {
+        let f: FillingLevels = serde_json::from_str(
+            r#"{"twinDosContainer1FillingLevel":0,"twinDosContainer2FillingLevel":28}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            twin_dos_line(&f).as_deref(),
+            Some("TwinDos: 1 empty · 2 28%")
+        );
+        let coffee: FillingLevels =
+            serde_json::from_str(include_str!("../../../fixtures/fillingLevels.sample.json"))
+                .unwrap();
+        assert_eq!(twin_dos_line(&coffee), None);
     }
 
     #[test]
