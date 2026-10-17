@@ -527,28 +527,22 @@ pub fn utc_offset() -> i64 {
     #[cfg(windows)]
     let (cmd, args) = (
         "powershell",
-        [
-            "-NoProfile",
-            "-Command",
-            "[int][TimeZoneInfo]::Local.GetUtcOffset([DateTime]::Now).TotalSeconds",
-        ]
-        .as_slice(),
+        ["-NoProfile", "-Command", "[DateTime]::Now.ToString('zzz')"].as_slice(),
     );
     #[cfg(not(windows))]
     let (cmd, args) = ("date", ["+%z"].as_slice());
     let out = std::process::Command::new(cmd).args(args).output();
-    let z = out.map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-    match z.as_deref() {
-        // "+0200" from `date`
-        Ok(z) if z.len() == 5 && z.starts_with(['+', '-']) => {
-            let secs = z[1..3].parse::<i64>().unwrap_or(0) * 3600
-                + z[3..].parse::<i64>().unwrap_or(0) * 60;
-            if z.starts_with('-') { -secs } else { secs }
-        }
-        // "7200" from PowerShell
-        Ok(z) => z.parse().unwrap_or(0),
-        _ => 0,
-    }
+    out.map_or(0, |o| offset_secs(&String::from_utf8_lossy(&o.stdout)))
+}
+
+/// "+0200" (`date`) or "-03:30" (PowerShell) in seconds east of UTC; 0 if it is neither.
+fn offset_secs(z: &str) -> i64 {
+    let z = z.trim().replace(':', "");
+    let (Some(sign @ ('+' | '-')), true) = (z.chars().next(), z.len() == 5) else {
+        return 0;
+    };
+    let secs = z[1..3].parse::<i64>().unwrap_or(0) * 3600 + z[3..].parse::<i64>().unwrap_or(0) * 60;
+    if sign == '-' { -secs } else { secs }
 }
 
 /// Builds Server-Sent Events messages from lines. A blank line ends a message: (event, data).
@@ -678,11 +672,8 @@ pub struct FillingLevels {
     pub twin_dos_container1_filling_level: Option<i64>,
     pub twin_dos_container2_filling_level: Option<i64>,
     // Dishwashers, percent full.
-    #[serde(default)]
     pub salt_filling_level: Option<i64>,
-    #[serde(default)]
     pub rinse_aid_filling_level: Option<i64>,
-    #[serde(default)]
     pub power_disc_filling_level: Option<i64>,
 }
 
@@ -1323,6 +1314,15 @@ mod tests {
             serde_json::from_str(include_str!("../../../fixtures/fillingLevels.sample.json"))
                 .unwrap();
         assert_eq!(twin_dos_line(&coffee), None);
+    }
+
+    #[test]
+    fn utc_offsets_from_date_and_powershell() {
+        assert_eq!(offset_secs("+0200\n"), 7200);
+        assert_eq!(offset_secs("-03:30"), -12600);
+        assert_eq!(offset_secs("-0100"), -3600);
+        assert_eq!(offset_secs("7200"), 0);
+        assert_eq!(offset_secs(""), 0);
     }
 
     #[test]
