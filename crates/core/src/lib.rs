@@ -420,24 +420,16 @@ pub fn activity(d: &Device) -> (Option<String>, Option<String>) {
     if [0, 1, 255].contains(&status) {
         return (None, None);
     }
-    let show = |r: &Reading,
-                ours: fn(i64, i64) -> Option<&'static str>,
-                raw: &str,
-                fallback: Option<String>| {
+    // Codes mean nothing to people, so a name we don't have is left out, never shown as a number.
+    let show = |r: &Reading, ours: fn(i64, i64) -> Option<&'static str>| {
         if let Some(t) = r.value_localized.as_deref().filter(|t| !t.is_empty()) {
             return Some(t.to_string());
         }
         let code = r.value_raw?;
-        if let Some(n) = names::confirmed_name(kind, code) {
-            return Some(n.to_string());
-        }
-        match ours(kind, code) {
-            Some("") => None,
-            Some(n) => Some(format!("{n} ({code})")),
-            None => {
-                fallback.or_else(|| (code > 0 && code != 65535).then(|| format!("{raw} {code}")))
-            }
-        }
+        names::confirmed_name(kind, code)
+            .or_else(|| ours(kind, code))
+            .filter(|n| !n.is_empty())
+            .map(String::from)
     };
     let program_type = d
         .state
@@ -446,14 +438,9 @@ pub fn activity(d: &Device) -> (Option<String>, Option<String>) {
         .clone()
         .filter(|t| !t.is_empty());
     let phase = (status != END)
-        .then(|| show(&d.state.program_phase, names::phase_name, "phase", None))
+        .then(|| show(&d.state.program_phase, names::phase_name))
         .flatten();
-    let program = show(
-        &d.state.program_id,
-        names::program_name,
-        "programme",
-        program_type,
-    );
+    let program = show(&d.state.program_id, names::program_name).or(program_type);
     (program, phase)
 }
 
@@ -663,10 +650,7 @@ pub fn history_line(r: &LastRun, offset: i64) -> String {
         (_, code) => code
             .and_then(|c| names::program_name(WASHER_DRYER, c))
             .filter(|n| !n.is_empty())
-            .map_or_else(
-                || format!("Programme {}", code.map_or("?".into(), |c| c.to_string())),
-                String::from,
-            ),
+            .map_or_else(|| "Unnamed programme".into(), String::from),
     };
     let mut parts = Vec::new();
     if let (Some(start), Some((_, mo, d, h, mi))) = (
@@ -1161,14 +1145,13 @@ mod tests {
         // A drink: the API's own name, plus our phase.
         let line = set(d, 5, 24000, "coffee", 4377);
         assert!(line.starts_with("CM6160 Coffee Machine: In use, coffee · Grinding"));
-        // Our table name that nobody confirmed: shown with its code.
+        // Our table name that nobody confirmed: the name only, never the code.
         let line = set(d, 5, 24750, "", 4377);
-        assert!(
-            line.starts_with("CM6160 Coffee Machine: In use, Appliance rinse (24750) · Grinding")
-        );
-        // Unknown codes stay visible as raw codes.
+        assert!(line.starts_with("CM6160 Coffee Machine: In use, Appliance rinse · Grinding"));
+        // Codes we have no name for are left out, never shown as numbers.
         let line = set(d, 5, 24760, "", 4410);
-        assert!(line.starts_with("CM6160 Coffee Machine: In use, programme 24760 · phase 4410"));
+        assert!(!line.contains("24760") && !line.contains("4410"));
+        assert!(line.starts_with("CM6160 Coffee Machine: In use"));
         // Off stays as it was.
         assert!(set(d, 0, 24753, "", 4352).starts_with("CM6160 Coffee Machine: Off (mobile"));
     }
@@ -1221,12 +1204,13 @@ mod tests {
         assert!(
             status_line(d).starts_with("WTR860 Washer dryer: Finished, Cleaning/Care programme (")
         );
-        // No type text either: the raw code.
+        // No type text either: no programme shown, and never the code.
         d.state.program_type = Reading::default();
-        assert!(status_line(d).contains("Finished, programme 9999"));
-        // Washer-dryer 48 has a table name, shown with its code.
+        assert!(status_line(d).starts_with("WTR860 Washer dryer: Finished ("));
+        assert!(!status_line(d).contains("9999"));
+        // Washer-dryer 48 has a table name: the name only.
         d.state.program_id.value_raw = Some(48);
-        assert!(status_line(d).contains("Finished, Rinse out lint (48)"));
+        assert!(status_line(d).contains("Finished, Rinse out lint ("));
     }
 
     #[test]
