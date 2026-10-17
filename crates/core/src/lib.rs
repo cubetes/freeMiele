@@ -722,7 +722,7 @@ pub const CARE_SCHEDULE: &str =
   Every month: clean the bean container and the water container filter
   Due-now reminders only appear on the machine's display.";
 
-/// Login details, kept as one entry in the macOS Keychain.
+/// Login details, kept as one entry in the system password store (the Keychain on a Mac).
 #[derive(Serialize, Deserialize)]
 pub struct Session {
     client_id: String,
@@ -752,12 +752,12 @@ fn keychain() -> Result<keyring::Entry> {
 
 pub const NOT_LOGGED_IN: &str = "Not logged in. Run `miele login` first.";
 
-/// Tell "no saved login" apart from "macOS refused access to it".
+/// Tell "no saved login" apart from "the password store refused access to it".
 fn login_error(e: keyring::Error) -> String {
     match e {
         keyring::Error::NoEntry => NOT_LOGGED_IN.into(),
         e => format!(
-            "macOS didn't allow access to the saved login. Run the command again and click Always Allow. ({e})"
+            "Your system's password store didn't allow access to the saved login. Run the command again and allow access (on a Mac: click Always Allow). ({e})"
         ),
     }
 }
@@ -1086,7 +1086,7 @@ mod tests {
     fn keychain_errors_say_what_went_wrong() {
         assert_eq!(login_error(keyring::Error::NoEntry), NOT_LOGGED_IN);
         let refused = login_error(keyring::Error::NoStorageAccess("denied".into()));
-        assert!(refused.starts_with("macOS didn't allow access"));
+        assert!(refused.starts_with("Your system's password store didn't allow access"));
         assert!(refused.contains("denied"));
     }
 
