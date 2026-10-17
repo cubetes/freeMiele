@@ -75,4 +75,26 @@ The starting point is Miele's brand red, approximately `#8C0014` (hue 351°, ver
 
 ## Iconography
 
-No icon set chosen yet. Until one is, use words, not pictures. When one is added, use a single-weight outline set at 20px, drawn in `ink` or the state colour.
+One single-weight outline set: 20px grid, 1.5 stroke, round ends, no fills. It lives in `crates/app/ui/app.js`. Rust picks the icon key for each card; the page only draws it.
+
+- Drinks: one icon per drink, found by programme code (`24000 + (code - 24000) mod 32`, so every user profile gets the same icon). Never by name: names are translated and repeat. An unknown code gets the brewing cup.
+- States: washing, drying, rinsing, brewing, finished, attention, off (power), not connected (crossed-out wifi). Machines at rest: coffee machine, washer.
+- Never show programme or phase codes, in text or in a label.
+
+### The ring
+
+Each card's icon sits in a 44px ring. The ring backs up the chip word; it never replaces it.
+
+| State | Ring |
+| --- | --- |
+| Off | thin `line` |
+| Ready | thin `brand` |
+| Running, with progress | `crema` arc over a `line` track |
+| Running, no progress (coffee, rinse) | quarter arc turning once every 1.6 s |
+| Finished | full `brand` |
+| Needs attention, Fault | ring with a gap, in `attention` or `fault`; a Needs attention card also gets an `attention` edge (red stays small) |
+| Not connected | dotted `ink-muted` |
+
+- Only a running ring is a `progressbar`. With progress it carries a value and text such as "62 percent done, 23 minutes left". Without, it has a label only. Every other ring is hidden from screen readers.
+- Motion: the arc grows once when the panel opens. Icon loops are slow and small. When a chip word changes, the chip, title and icon move once, and one polite announcement says "Label: Chip". Nothing else is announced.
+- Reduce Motion turns every animation off. Each icon and ring rests on a complete still picture.

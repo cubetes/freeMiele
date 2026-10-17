@@ -1,0 +1,258 @@
+{
+  "000000000001": {
+    "ident": {
+      "type": {
+        "value_raw": 17,
+        "value_localized": "Coffee Machine"
+      },
+      "deviceName": "",
+      "deviceIdentLabel": {
+        "fabNumber": "000000000001",
+        "techType": "CM6160"
+      }
+    },
+    "state": {
+      "status": {
+        "value_raw": 1,
+        "value_localized": "Off"
+      },
+      "ProgramID": {
+        "value_raw": 0,
+        "value_localized": ""
+      },
+      "remainingTime": [
+        0,
+        0
+      ],
+      "elapsedTime": [],
+      "signalInfo": false,
+      "signalFailure": false,
+      "remoteEnable": {
+        "fullRemoteControl": true,
+        "smartGrid": false,
+        "mobileStart": false
+      }
+    }
+  },
+  "000000000002": {
+    "ident": {
+      "type": {
+        "value_raw": 17,
+        "value_localized": "Coffee Machine"
+      },
+      "deviceName": "",
+      "deviceIdentLabel": {
+        "fabNumber": "000000000002",
+        "techType": "CM6160"
+      }
+    },
+    "state": {
+      "status": {
+        "value_raw": 2,
+        "value_localized": "On"
+      },
+      "ProgramID": {
+        "value_raw": 0,
+        "value_localized": ""
+      },
+      "remainingTime": [
+        0,
+        0
+      ],
+      "elapsedTime": [],
+      "signalInfo": false,
+      "signalFailure": false,
+      "remoteEnable": {
+        "fullRemoteControl": true,
+        "smartGrid": false,
+        "mobileStart": true
+      }
+    }
+  },
+  "000000000003": {
+    "ident": {
+      "type": {
+        "value_raw": 17,
+        "value_localized": "Coffee Machine"
+      },
+      "deviceName": "",
+      "deviceIdentLabel": {
+        "fabNumber": "000000000003",
+        "techType": "CM6160"
+      }
+    },
+    "state": {
+      "status": {
+        "value_raw": 5,
+        "value_localized": "In use"
+      },
+      "ProgramID": {
+        "value_raw": 24001,
+        "value_localized": "Espresso"
+      },
+      "remainingTime": [
+        0,
+        0
+      ],
+      "elapsedTime": [],
+      "signalInfo": false,
+      "signalFailure": false,
+      "remoteEnable": {
+        "fullRemoteControl": true,
+        "smartGrid": false,
+        "mobileStart": true
+      }
+    }
+  },
+  "000000000004": {
+    "ident": {
+      "type": {
+        "value_raw": 17,
+        "value_localized": "Coffee Machine"
+      },
+      "deviceName": "",
+      "deviceIdentLabel": {
+        "fabNumber": "000000000004",
+        "techType": "CM6160"
+      }
+    },
+    "state": {
+      "status": {
+        "value_raw": 5,
+        "value_localized": "In use"
+      },
+      "ProgramID": {
+        "value_raw": 24759,
+        "value_localized": ""
+      },
+      "programType": {
+        "value_raw": 3,
+        "value_localized": ""
+      },
+      "programPhase": {
+        "value_raw": 4405,
+        "value_localized": ""
+      },
+      "remainingTime": [
+        0,
+        0
+      ],
+      "elapsedTime": [],
+      "signalInfo": false,
+      "signalFailure": false,
+      "remoteEnable": {
+        "fullRemoteControl": true,
+        "smartGrid": false,
+        "mobileStart": false
+      }
+    }
+  },
+  "000000000005": {
+    "ident": {
+      "type": {
+        "value_raw": 24,
+        "value_localized": "Washer dryer"
+      },
+      "deviceName": "",
+      "deviceIdentLabel": {
+        "fabNumber": "000000000005",
+        "techType": "WTR860"
+      }
+    },
+    "state": {
+      "status": {
+        "value_raw": 7,
+        "value_localized": "Program ended"
+      },
+      "ProgramID": {
+        "value_raw": 29,
+        "value_localized": "Sportswear"
+      },
+      "remainingTime": [
+        0,
+        0
+      ],
+      "elapsedTime": [
+        1,
+        1
+      ],
+      "signalInfo": false,
+      "signalFailure": false,
+      "remoteEnable": {
+        "fullRemoteControl": true,
+        "smartGrid": false,
+        "mobileStart": false
+      }
+    }
+  },
+  "000000000006": {
+    "ident": {
+      "type": {
+        "value_raw": 24,
+        "value_localized": "Washer dryer"
+      },
+      "deviceName": "",
+      "deviceIdentLabel": {
+        "fabNumber": "000000000006",
+        "techType": "WTR860"
+      }
+    },
+    "state": {
+      "status": {
+        "value_raw": 2,
+        "value_localized": "On"
+      },
+      "ProgramID": {
+        "value_raw": 0,
+        "value_localized": ""
+      },
+      "remainingTime": [
+        0,
+        0
+      ],
+      "elapsedTime": [],
+      "signalInfo": false,
+      "signalFailure": true,
+      "remoteEnable": {
+        "fullRemoteControl": true,
+        "smartGrid": false,
+        "mobileStart": false
+      }
+    }
+  },
+  "000000000007": {
+    "ident": {
+      "type": {
+        "value_raw": 24,
+        "value_localized": "Washer dryer"
+      },
+      "deviceName": "",
+      "deviceIdentLabel": {
+        "fabNumber": "000000000007",
+        "techType": "WTR860"
+      }
+    },
+    "state": {
+      "status": {
+        "value_raw": 255,
+        "value_localized": "Not connected"
+      },
+      "ProgramID": {
+        "value_raw": 0,
+        "value_localized": ""
+      },
+      "remainingTime": [
+        0,
+        0
+      ],
+      "elapsedTime": [],
+      "signalInfo": false,
+      "signalFailure": false,
+      "remoteEnable": {
+        "fullRemoteControl": true,
+        "smartGrid": false,
+        "mobileStart": false
+      }
+    }
+  }
+}

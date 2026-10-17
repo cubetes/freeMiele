@@ -21,21 +21,57 @@ body{--body:'FM Digits','Atkinson Hyperlegible Next','Atkinson Hyperlegible',sys
 .icon-btn:hover{background:var(--track)}
 .icon-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 .cards{display:flex;flex-direction:column;gap:8px}
-.card{display:flex;flex-direction:column;gap:10px;padding:12px;border-radius:12px;background:var(--raised);border:0.5px solid var(--line)}
+.card{display:grid;grid-template-columns:44px 1fr;column-gap:12px;row-gap:10px;padding:12px;border-radius:12px;background:var(--raised);border:0.5px solid var(--line)}
+.card>:not(.ring):not(.body){grid-column:1/-1}
+.card.attention{border:1px solid var(--attention)}
 .meta{display:flex;align-items:center;gap:8px}
 .label{flex-grow:1;font-size:12px;line-height:16px;color:var(--muted)}
 .chip{font-size:11px;line-height:16px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;border-radius:999px;padding:1px 8px;white-space:nowrap}
-.ready{color:var(--brand);background:var(--chip-ok)}
-.running{color:var(--crema);background:var(--crema-bg)}
-.attention{color:var(--attention);background:var(--att-bg)}
-.fault{color:var(--fault);background:var(--fault-bg)}
-.off{color:var(--muted);background:var(--off-bg)}
+.chip.ready{color:var(--brand);background:var(--chip-ok)}
+.chip.running{color:var(--crema);background:var(--crema-bg)}
+.chip.attention{color:var(--attention);background:var(--att-bg)}
+.chip.fault{color:var(--fault);background:var(--fault-bg)}
+.chip.off{color:var(--muted);background:var(--off-bg)}
 .title{font-family:var(--display);font-weight:600;font-size:17px;line-height:22px;font-variant-numeric:proportional-nums}
 .sub{color:var(--muted);margin-top:2px;user-select:text}
 .care{font-size:12px;line-height:16px;margin:0}
 .care.low{color:var(--attention)}
-.track{height:6px;border-radius:3px;background:var(--track);overflow:hidden}
-.track>div{height:100%;border-radius:3px;background:var(--crema)}
+/* The ring: the card's second signal next to the chip word. Its shape says the state. */
+.ring{position:relative;width:44px;height:44px}
+.ring svg.r{position:absolute;inset:0}
+.ring .ico{position:absolute;inset:12px;display:grid;place-items:center}
+.rg{fill:none;stroke-width:2.5;stroke-linecap:round}
+.rg.thin{stroke-width:1.5}
+.rg.t{stroke:var(--line)}.rg.b{stroke:var(--brand)}.rg.c{stroke:var(--crema)}.rg.a{stroke:var(--attention)}.rg.f{stroke:var(--fault)}.rg.m{stroke:var(--muted)}
+.rg.grow{animation:grow 1.4s cubic-bezier(.2,.7,.2,1) both}
+.spin{transform-origin:22px 22px;animation:spin 1.6s linear infinite}
+.ico [class]{transform-box:view-box}
+.drop{animation:drop 1.6s ease-in infinite;animation-delay:var(--d16)}
+.drop.d2{animation-delay:calc(var(--d16) + .55s)}.drop.d3{animation-delay:calc(var(--d16) + 1.1s)}
+.heat{animation:rise 2.4s ease-in-out infinite;animation-delay:var(--d24)}
+.heat.d2{animation-delay:calc(var(--d24) + .4s)}
+.drum{transform-origin:10px 11.5px;animation:spin 4s linear infinite;animation-delay:var(--d40)}
+.chg .tick{stroke-dasharray:20;animation:draw .7s ease-out calc(.3s - var(--age)) both}
+.chg .pulse{animation:pulse 1.2s ease-in-out calc(0s - var(--age)) 2}
+@keyframes grow{from{stroke-dasharray:0 100}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes drop{0%{transform:translateY(-2px);opacity:0}30%{opacity:1}100%{transform:translateY(3px);opacity:0}}
+@keyframes rise{0%,100%{transform:translateY(.8px);opacity:.45}50%{transform:translateY(-1px);opacity:1}}
+@keyframes draw{from{stroke-dashoffset:20}}
+@keyframes pulse{50%{opacity:.4}}
+/* A chip word changed: it moves once. --age is how far in we already are, set per redraw. */
+.chg .chip{animation:chip-in .35s ease-out calc(0s - var(--age))}
+.chg .title{animation:fade-in .35s ease-out calc(0s - var(--age))}
+.chg .ico{animation:ico-in .4s cubic-bezier(.2,.9,.3,1.3) calc(0s - var(--age))}
+.chg.finished{animation:edge-brand 2.4s ease-out calc(0s - var(--age))}
+.chg.attention{animation:edge-nudge .5s ease-in-out calc(0s - var(--age)) 2}
+@keyframes chip-in{from{transform:translateY(5px);opacity:0}}
+@keyframes fade-in{from{opacity:0}}
+@keyframes ico-in{from{transform:scale(.6);opacity:0}}
+@keyframes edge-brand{0%,55%{border-color:var(--brand);border-width:1px}100%{border-color:var(--line)}}
+@keyframes edge-nudge{50%{transform:translateX(2px)}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .steps{margin:6px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px}
 .steps li{display:flex;gap:8px}
 .n{flex:none;width:18px;height:18px;border-radius:999px;border:1.5px solid var(--attention);box-sizing:border-box;display:grid;place-items:center;font-size:11px;font-weight:700;color:var(--attention)}
