@@ -478,16 +478,18 @@ pub fn details(d: &Device) -> Option<String> {
 }
 
 /// The compartment temperatures of a fridge, freezer or wine unit, e.g. "4 °C / -18 °C".
-/// Unused compartments (-32768) are skipped; None for other appliances or when none is reported.
+/// Unused compartments are skipped; None for other appliances or when none is reported.
 fn compartments(d: &Device) -> Option<String> {
-    if !COOLERS.contains(&d.ident.kind.value_raw) {
+    // Off or not connected: any numbers left are old readings.
+    if !COOLERS.contains(&d.ident.kind.value_raw) || [1, 255].contains(&d.state.status.value_raw) {
         return None;
     }
     let temps: Vec<_> = d
         .state
         .temperature
         .iter()
-        .filter(|t| t.value_raw != -32768)
+        // Miele marks an unused compartment as -32768, and sometimes as -3276800.
+        .filter(|t| t.value_raw > -32768)
         // Whole degrees, halves up: -1850 is -18 °C, 450 is 5 °C.
         .map(|t| format!("{} °C", (t.value_raw + 50).div_euclid(100)))
         .collect();
@@ -1401,7 +1403,11 @@ mod tests {
         );
         d.state.temperature[0].value_raw = 450;
         d.state.temperature[1].value_raw = -1851;
+        d.state.temperature[2].value_raw = -3276800;
         assert_eq!(compartments(d).as_deref(), Some("5 °C / -19 °C"));
+        d.state.status.value_raw = 255;
+        assert_eq!(compartments(d), None);
+        d.state.status.value_raw = 5;
         d.state.temperature.clear();
         assert_eq!(compartments(d), None);
         let washer: Devices = serde_json::from_str(include_str!(
