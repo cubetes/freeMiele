@@ -1303,7 +1303,7 @@ dependencies = [
 
 [[package]]
 name = "freemiele"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "keyring",
  "reqwest",
@@ -1313,7 +1313,7 @@ dependencies = [
 
 [[package]]
 name = "freemiele-app"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "freemiele",
  "serde",
@@ -1326,7 +1326,7 @@ dependencies = [
 
 [[package]]
 name = "freemiele-cli"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "clap",
  "clap_complete",
