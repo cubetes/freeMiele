@@ -27,7 +27,7 @@ model allows different things, so a real report is what turns a row into "works"
 | Tumble dryer | As washing machine, plus drying level | As above; untested |
 | Dishwasher | Status, program, phase, time left, start, stop, delayed start, salt / rinse aid / PowerDisc levels, last runs | `status` shows program, phase, time left and a delayed start ("starts at 14:30"); `care` shows salt, rinse aid and PowerDisc. Built from a sample, untested on a real dishwasher ([#42](https://github.com/cubetes/freeMiele/issues/42)) |
 | Oven, steam oven, microwave, combi | Status, program, temperatures, door, light, start, stop, power | Basic status only; untested |
-| Fridge, freezer, wine unit | Temperatures per zone, Holiday / Party / Sabbath mode, SuperCool / SuperFreeze | Basic status only; untested ([#30](https://github.com/cubetes/freeMiele/issues/30)) |
+| Fridge, freezer, wine unit | Temperatures per zone, Holiday / Party / Sabbath mode, SuperCool / SuperFreeze | `status` shows the temperature of each compartment ("In use · 4 °C / -18 °C"). Modes are not shown: the API lists them only as actions, not as the current mode. Built from a sample, untested on a real fridge ([#30](https://github.com/cubetes/freeMiele/issues/30)) |
 | Hood | Status, fan level, light, colours, filter saturation | Basic status only; untested |
 | Hob | Status, cooking zone levels (read-only) | Basic status only; untested |
 | Robot vacuum | Status, battery, programs, rooms | Basic status only; untested |

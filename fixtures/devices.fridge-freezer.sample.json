@@ -1,0 +1,59 @@
+{
+  "000000000021": {
+    "ident": {
+      "type": {
+        "key_localized": "Device type",
+        "value_raw": 21,
+        "value_localized": "Fridge-freezer"
+      },
+      "deviceName": "",
+      "deviceIdentLabel": {
+        "fabNumber": "000000000021",
+        "techType": "KFN 7774 D"
+      }
+    },
+    "state": {
+      "ProgramID": {
+        "value_raw": 0,
+        "value_localized": "",
+        "key_localized": "Program name"
+      },
+      "status": {
+        "value_raw": 5,
+        "value_localized": "In use",
+        "key_localized": "status"
+      },
+      "programType": {
+        "value_raw": 0,
+        "value_localized": "",
+        "key_localized": "Program type"
+      },
+      "programPhase": {
+        "value_raw": 0,
+        "value_localized": "",
+        "key_localized": "Program phase"
+      },
+      "remainingTime": [0, 0],
+      "startTime": [0, 0],
+      "targetTemperature": [
+        { "value_raw": 400, "value_localized": 4, "unit": "Celsius" },
+        { "value_raw": -1800, "value_localized": -18, "unit": "Celsius" },
+        { "value_raw": -32768, "value_localized": null, "unit": "Celsius" }
+      ],
+      "temperature": [
+        { "value_raw": 400, "value_localized": 4, "unit": "Celsius" },
+        { "value_raw": -1800, "value_localized": -18, "unit": "Celsius" },
+        { "value_raw": -32768, "value_localized": null, "unit": "Celsius" }
+      ],
+      "elapsedTime": [],
+      "signalInfo": false,
+      "signalFailure": false,
+      "signalDoor": false,
+      "remoteEnable": {
+        "fullRemoteControl": true,
+        "smartGrid": false,
+        "mobileStart": false
+      }
+    }
+  }
+}

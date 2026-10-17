@@ -24,6 +24,7 @@ const GLASS = '<path d="M5.5 6h9l-.9 11H6.4z"/><path d="M10 9c1.4 1.7 2 2.6 2 3.
 const STEAM = (y) => `<path d="M8 ${y}c-.7.8.7 1.6 0 2.5M11.5 ${y}c-.7.8.7 1.6 0 2.5"/>`;
 const PETAL = 'M9 5c-1.3-.8-1.5-2.3 0-3.2c1.5.9 1.3 2.4 0 3.2z';
 const WASHER = '<path d="M4.5 2.5h11a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-13a1 1 0 0 1 1-1z"/><path d="M3.5 6h13"/><path d="M6 4.25h.01M8 4.25h.01"/><circle cx="10" cy="11.5" r="3.8"/>';
+const DISH = '<path d="M4.5 2.5h11a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-13a1 1 0 0 1 1-1z"/><path d="M3.5 6h13"/><path d="M12 4.25h2"/><path d="M6 13.5h8M6.5 13.5v-2.5M10 13.5v-3M13.5 13.5v-2.5"/>';
 const I = {
   ristretto: SMALL + '<path d="M7.5 13.5h4"/><path d="M9.5 4.5v3"/>',
   espresso: SMALL + STEAM(4.5),
@@ -49,6 +50,9 @@ const I = {
   // appliances and states
   machine: '<path d="M5 2.5h10a1 1 0 0 1 1 1v14H4v-14a1 1 0 0 1 1-1z"/><path d="M4 6h12"/><path d="M8.5 8.5h3v2h-3z"/><path d="M8.5 14h3v2h-3z"/>',
   washer: WASHER,
+  dishwasher: DISH,
+  dishwashing: DISH + '<path class="drop" d="M8 7.8v1.4"/><path class="drop d2" d="M10 7.8v1.4"/><path class="drop d3" d="M12 7.8v1.4"/>',
+  fridge: '<path d="M5.5 1.5h9a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1z"/><path d="M4.5 8h11"/><path d="M7 4v2M7 10.5v3"/>',
   power: '<path d="M10 3v6.5"/><path d="M5.6 6a6 6 0 1 0 8.8 0"/>',
   brewing: '<path d="M5.5 9.5h8v3a4 4 0 0 1-8 0z"/><path d="M13.5 10.5h.8a1.6 1.6 0 0 1 0 3.2h-1.2"/><path d="M3.5 18h12"/><path class="drop" d="M8.5 3v1.5"/><path class="drop d2" d="M10.5 3v1.5"/>',
   rinsing: '<path d="M7 2.5h6V5H7z"/><path class="drop" d="M8 8v1.5"/><path class="drop d2" d="M10 8v1.5"/><path class="drop d3" d="M12 8v1.5"/><path d="M3.5 14.5a6.5 3 0 0 0 13 0"/>',
@@ -314,13 +318,20 @@ function render(cards) {
     if (care.get(c.id)) card.append(el('div', /empty/.test(care.get(c.id)) ? 'sub care low' : 'sub care', care.get(c.id)));
     return card;
   }));
+  fit();
+}
+
+// Ask for the window to be as tall as everything would be; Rust caps it at the screen and the list scrolls.
+function fit() {
+  if (!tauri) return;
+  const panel = document.querySelector('.panel');
+  tauri.core.invoke('fit', { height: panel.offsetHeight - list.clientHeight + list.scrollHeight });
 }
 
 if (tauri) {
   document.getElementById('more').addEventListener('click', () => tauri.core.invoke('more'));
   // The window is as tall as the panel.
-  new ResizeObserver(() => tauri.core.invoke('fit', { height: document.querySelector('.panel').offsetHeight }))
-    .observe(document.querySelector('.panel'));
+  new ResizeObserver(fit).observe(document.querySelector('.panel'));
   tauri.event.listen('cards', (e) => render(e.payload));
   tauri.event.listen('drink', (e) => {
     const d = drinks.get(menuFor)?.all.find((d) => String(d.id) === e.payload);
