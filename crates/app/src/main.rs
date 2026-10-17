@@ -27,8 +27,16 @@ use tauri_plugin_notification::NotificationExt;
 const IN_USE: i64 = 5;
 const NOT_CONNECTED: i64 = 255;
 /// Set to a devices JSON file (e.g. a fixture) to show it instead of the live appliances, for
-/// screenshots and agents. Nothing is sent to Miele while it is set.
+/// screenshots and agents. While it is set nothing is sent to Miele and the saved login is untouched.
 const DEMO: &str = "FREEMIELE_DEMO";
+
+/// Every path to Miele or the Keychain checks this first.
+fn not_in_demo() -> Result<(), String> {
+    match std::env::var_os(DEMO) {
+        Some(_) => Err("Demo mode: nothing is sent to Miele.".into()),
+        None => Ok(()),
+    }
+}
 
 /// What the page draws for one appliance.
 #[derive(Serialize, Clone, PartialEq, Debug)]
@@ -407,9 +415,7 @@ fn plain(e: Box<dyn std::error::Error>) -> String {
 async fn miele<T: Send + 'static>(
     f: impl FnOnce(&str) -> freemiele::Result<T> + Send + 'static,
 ) -> Result<T, String> {
-    if std::env::var_os(DEMO).is_some() {
-        return Err("Demo mode: nothing is sent to Miele.".into());
-    }
+    not_in_demo()?;
     tauri::async_runtime::spawn_blocking(move || {
         Session::load()
             .and_then(|mut s| s.access_token())
@@ -618,6 +624,7 @@ async fn machine() -> Result<Option<Machine>, String> {
 /// Log out (core does the work), then show the logged-out card.
 #[tauri::command]
 async fn log_out(app: AppHandle) -> Result<(), String> {
+    not_in_demo()?;
     tauri::async_runtime::spawn_blocking(|| freemiele::logout().map_err(|e| e.to_string()))
         .await
         .map_err(|e| e.to_string())??;
@@ -638,6 +645,7 @@ async fn log_in(
     client_id: String,
     client_secret: String,
 ) -> Result<(), String> {
+    not_in_demo()?;
     let (client_id, client_secret) = (
         client_id.trim().to_string(),
         client_secret.trim().to_string(),
