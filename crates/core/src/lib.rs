@@ -71,6 +71,9 @@ pub struct State {
     pub spinning_speed: Reading,
     #[serde(default)]
     pub target_temperature: Vec<Temperature>,
+    // Measured temperature per compartment: fridges, freezers and wine units.
+    #[serde(default)]
+    pub temperature: Vec<Temperature>,
 }
 
 /// A temperature setting. `value_raw` is hundredths of °C (4000 = 40 °C); -32768 = not used.
@@ -474,6 +477,23 @@ pub fn details(d: &Device) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join(" · "))
 }
 
+/// The compartment temperatures of a fridge, freezer or wine unit, e.g. "4 °C / -18 °C".
+/// Unused compartments (-32768) are skipped; None for other appliances or when none is reported.
+fn compartments(d: &Device) -> Option<String> {
+    if !COOLERS.contains(&d.ident.kind.value_raw) {
+        return None;
+    }
+    let temps: Vec<_> = d
+        .state
+        .temperature
+        .iter()
+        .filter(|t| t.value_raw != -32768)
+        // Whole degrees, halves up: -1850 is -18 °C, 450 is 5 °C.
+        .map(|t| format!("{} °C", (t.value_raw + 50).div_euclid(100)))
+        .collect();
+    (!temps.is_empty()).then(|| temps.join(" / "))
+}
+
 /// One line per device, e.g. "CM6160 Coffee Machine: Off (mobile start off) — needs attention".
 /// An appliance at work adds its program and phase: "In use, coffee · Grinding".
 /// A washer or dryer that has finished says "Finished, Sportswear", with no phase or time left.
@@ -488,6 +508,9 @@ pub fn status_line(d: &Device) -> String {
             line += &format!(" ({details})");
         }
     }
+    if let Some(temps) = compartments(d) {
+        line += &format!(" · {temps}");
+    }
     if status == WAITING_TO_START {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -501,7 +524,11 @@ pub fn status_line(d: &Device) -> String {
         line += &format!(", {h}h{m:02} left");
     }
     let remote = &d.state.remote_enable;
-    if remote.full_remote_control && !remote.mobile_start {
+    // Nothing starts on a fridge, so its mobile start setting means nothing.
+    if remote.full_remote_control
+        && !remote.mobile_start
+        && !COOLERS.contains(&d.ident.kind.value_raw)
+    {
         line += " (mobile start off)";
     }
     if d.state.signal_failure {
@@ -732,6 +759,9 @@ const WASHER_DRYER: i64 = 24;
 pub const DISHWASHER: i64 = 7;
 /// The types Miele keeps a run history for, and that report spin speed and temperature.
 pub const WASHERS_AND_DRYERS: [i64; 3] = [WASHING_MACHINE, TUMBLE_DRYER, WASHER_DRYER];
+/// Fridge, freezer, fridge-freezer and the wine units (cabinet, conditioning, storage
+/// conditioning, cabinet-freezer), numbered as in Miele's API docs.
+const COOLERS: [i64; 7] = [19, 20, 21, 32, 33, 34, 68];
 /// `State.status.value_raw` of a finished program.
 pub const END: i64 = 7;
 /// `State.status.value_raw` of a programme set to start later.
@@ -1355,6 +1385,30 @@ mod tests {
         assert_eq!(starts_at(&[2, 30], late).as_deref(), Some("01:30"));
         assert_eq!(starts_at(&[0, 0], late), None);
         assert_eq!(starts_at(&[], late), None);
+    }
+
+    #[test]
+    fn fridge_freezer_shows_compartment_temperatures() {
+        let mut devices: Devices = serde_json::from_str(include_str!(
+            "../../../fixtures/devices.fridge-freezer.sample.json"
+        ))
+        .unwrap();
+        let d = devices.get_mut("000000000021").unwrap();
+        // The third compartment is -32768 (unused); no "mobile start off" on a fridge.
+        assert_eq!(
+            status_line(d),
+            "KFN 7774 D Fridge-freezer: In use · 4 °C / -18 °C"
+        );
+        d.state.temperature[0].value_raw = 450;
+        d.state.temperature[1].value_raw = -1851;
+        assert_eq!(compartments(d).as_deref(), Some("5 °C / -19 °C"));
+        d.state.temperature.clear();
+        assert_eq!(compartments(d), None);
+        let washer: Devices = serde_json::from_str(include_str!(
+            "../../../fixtures/devices.washer-running.sample.json"
+        ))
+        .unwrap();
+        assert_eq!(compartments(&washer["000000000024"]), None);
     }
 
     #[test]
