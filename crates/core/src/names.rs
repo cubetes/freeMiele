@@ -33,7 +33,7 @@ pub fn confirmed_name(kind: i64, code: i64) -> Option<&'static str> {
 static WASHING_MACHINE_PROGRAMS: Table = &[
     ("", &[0, -1]),
     ("Cottons", &[1, 10001]),
-    ("[%key:common::state::normal%]", &[2]),
+    ("Normal", &[2]),
     ("Minimum iron", &[3]),
     ("Delicates", &[4, 10022]),
     ("Woollens", &[8, 10040]),
@@ -154,7 +154,7 @@ static DISH_WASHER_PROGRAMS: Table = &[
     ("Tall items", &[17, 42]),
     ("Glasses warm", &[19]),
     ("QuickIntense", &[21, 46]),
-    ("[%key:common::state::normal%]", &[23, 30, 48, 217]),
+    ("Normal", &[23, 30, 48, 217]),
     ("Pre-wash", &[24]),
     ("Pot rests and filters", &[25]),
     ("PowerWash", &[44, 204]),
@@ -781,7 +781,7 @@ static OVEN_PROGRAMS: Table = &[
 
 static ROBOT_VACUUM_CLEANER_PROGRAMS: Table = &[
     ("", &[0, -1]),
-    ("[%key:common::state::auto%]", &[1]),
+    ("Auto", &[1]),
     ("Spot", &[2]),
     ("Turbo", &[3]),
     ("Silent", &[4]),
