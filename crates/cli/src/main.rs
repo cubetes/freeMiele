@@ -2,9 +2,9 @@ use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
 use freemiele::dataact::{self, Appliance, Consumption, Refused, Run};
 use freemiele::{
-    Actions, CARE_SCHEDULE, COFFEE_MACHINE, Device, Devices, FillingLevels, LastRun, Outcome,
-    Program, Result, Session, WASHERS_AND_DRYERS, care_line, choose, get, history_line, name,
-    twin_dos_line,
+    Actions, CARE_SCHEDULE, COFFEE_MACHINE, DISHWASHER, Device, Devices, FillingLevels, LastRun,
+    Outcome, Program, Result, Session, WASHERS_AND_DRYERS, care_line, choose, dishwasher_line, get,
+    history_line, name, twin_dos_line, utc_offset,
 };
 use std::io::{IsTerminal, Write};
 use std::sync::atomic::AtomicBool;
@@ -36,7 +36,8 @@ enum Cmd {
     Watch,
     /// Print raw appliance data as JSON for a support report; serial numbers and names are removed
     Dump,
-    /// Coffee machine: how often it has been cleaned, and the care schedule. Washer: TwinDos levels
+    /// Coffee machine: how often it has been cleaned, and the care schedule. Washer: TwinDos levels.
+    /// Dishwasher: salt, rinse aid and PowerDisc levels
     Care,
     /// The last runs of your washer or dryer
     History {
@@ -190,10 +191,11 @@ fn token() -> Result<String> {
 
 /// Local time as HH:MM:SS, e.g. "22:48:14".
 fn clock() -> String {
-    // lean: asks `date` (always on macOS) to avoid a time crate; swap for chrono if this runs elsewhere.
-    let out = std::process::Command::new("date").arg("+%T").output();
-    out.map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default()
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |t| t.as_secs() as i64);
+    let s = (now + utc_offset()).rem_euclid(86400);
+    format!("{:02}:{:02}:{:02}", s / 3600, s % 3600 / 60, s % 60)
 }
 
 /// GET from the Data Act API. A 403 ends the command (not an error: Miele hasn't opened it yet);
@@ -214,21 +216,6 @@ fn data_act<T: serde::de::DeserializeOwned>(token: &str, path: &str) -> Result<O
             }
             _ => Err(e),
         },
-    }
-}
-
-/// Seconds east of UTC now, from the system clock's zone (macOS `date`).
-/// lean: one offset for all dates, so runs across a daylight-saving change are off by an hour.
-fn utc_offset() -> i64 {
-    let out = std::process::Command::new("date").arg("+%z").output();
-    let z = out.map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-    match z.as_deref() {
-        Ok(z) if z.len() == 5 => {
-            let secs = z[1..3].parse::<i64>().unwrap_or(0) * 3600
-                + z[3..].parse::<i64>().unwrap_or(0) * 60;
-            if z.starts_with('-') { -secs } else { secs }
-        }
-        _ => 0,
     }
 }
 
@@ -281,18 +268,23 @@ fn care() -> Result<()> {
         );
         println!("{CARE_SCHEDULE}");
     }
-    for (id, d) in devices
-        .iter()
-        .filter(|(_, d)| WASHERS_AND_DRYERS.contains(&d.ident.kind.value_raw))
-    {
+    for (id, d) in devices.iter().filter(|(_, d)| {
+        let kind = d.ident.kind.value_raw;
+        WASHERS_AND_DRYERS.contains(&kind) || kind == DISHWASHER
+    }) {
         let levels: Result<FillingLevels> = get(&token, &format!("/devices/{id}/fillingLevels"));
-        if let Some(line) = levels.ok().as_ref().and_then(twin_dos_line) {
+        let line = levels
+            .ok()
+            .and_then(|f| twin_dos_line(&f).or_else(|| dishwasher_line(&f)));
+        if let Some(line) = line {
             found = true;
             println!("{}\n  {line}", name(d));
         }
     }
     if !found {
-        println!("Nothing to show: no coffee machine or TwinDos washer on this Miele account.");
+        println!(
+            "Nothing to show: no coffee machine, TwinDos washer or dishwasher on this Miele account."
+        );
     }
     Ok(())
 }

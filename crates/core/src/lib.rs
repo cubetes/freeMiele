@@ -50,6 +50,9 @@ pub struct State {
     // [hours, minutes]; empty or missing when the appliance is not running
     #[serde(default)]
     pub elapsed_time: Vec<u32>,
+    // [hours, minutes] until a delayed start; [0, 0], empty or missing = none
+    #[serde(default)]
+    pub start_time: Vec<u32>,
     pub signal_info: bool,
     pub signal_failure: bool,
     // The door is open; missing on appliances without a door sensor.
@@ -485,6 +488,14 @@ pub fn status_line(d: &Device) -> String {
             line += &format!(" ({details})");
         }
     }
+    if status == WAITING_TO_START {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |t| t.as_secs() as i64);
+        if let Some(at) = starts_at(&d.state.start_time, now + utc_offset()) {
+            line += &format!(", starts at {at}");
+        }
+    }
     let [h, m] = d.state.remaining_time;
     if h + m > 0 && status != END {
         line += &format!(", {h}h{m:02} left");
@@ -499,6 +510,39 @@ pub fn status_line(d: &Device) -> String {
         line += " — needs attention: check the machine's display";
     }
     line
+}
+
+/// "14:30": the local clock time `start` ([hours, minutes]) after `now` (local seconds since 1970).
+/// None when no delayed start is set.
+fn starts_at(start: &[u32], now: i64) -> Option<String> {
+    let &[h, m] = start else { return None };
+    let mins = (now / 60 + i64::from(h * 60 + m)).rem_euclid(24 * 60);
+    (h + m > 0).then(|| format!("{:02}:{:02}", mins / 60, mins % 60))
+}
+
+/// Seconds east of UTC now, from the system clock's zone.
+/// lean: one offset for all dates, so runs across a daylight-saving change are off by an hour.
+pub fn utc_offset() -> i64 {
+    // std has no time zones, so ask the system: `date` on macOS and Linux, PowerShell on Windows.
+    #[cfg(windows)]
+    let (cmd, args) = (
+        "powershell",
+        ["-NoProfile", "-Command", "[DateTime]::Now.ToString('zzz')"].as_slice(),
+    );
+    #[cfg(not(windows))]
+    let (cmd, args) = ("date", ["+%z"].as_slice());
+    let out = std::process::Command::new(cmd).args(args).output();
+    out.map_or(0, |o| offset_secs(&String::from_utf8_lossy(&o.stdout)))
+}
+
+/// "+0200" (`date`) or "-03:30" (PowerShell) in seconds east of UTC; 0 if it is neither.
+fn offset_secs(z: &str) -> i64 {
+    let z = z.trim().replace(':', "");
+    let (Some(sign @ ('+' | '-')), true) = (z.chars().next(), z.len() == 5) else {
+        return 0;
+    };
+    let secs = z[1..3].parse::<i64>().unwrap_or(0) * 3600 + z[3..].parse::<i64>().unwrap_or(0) * 60;
+    if sign == '-' { -secs } else { secs }
 }
 
 /// Builds Server-Sent Events messages from lines. A blank line ends a message: (event, data).
@@ -627,6 +671,10 @@ pub struct FillingLevels {
     // Percent full (the owner's WTR860: 0 = empty tank).
     pub twin_dos_container1_filling_level: Option<i64>,
     pub twin_dos_container2_filling_level: Option<i64>,
+    // Dishwashers, percent full.
+    pub salt_filling_level: Option<i64>,
+    pub rinse_aid_filling_level: Option<i64>,
+    pub power_disc_filling_level: Option<i64>,
 }
 
 /// One finished run, from `GET /devices/{id}/lastUsedPrograms` (a JSON array). The consumption
@@ -680,10 +728,14 @@ pub const COFFEE_MACHINE: i64 = 17;
 const WASHING_MACHINE: i64 = 1;
 const TUMBLE_DRYER: i64 = 2;
 const WASHER_DRYER: i64 = 24;
+/// `Ident.kind.value_raw` of a dishwasher.
+pub const DISHWASHER: i64 = 7;
 /// The types Miele keeps a run history for, and that report spin speed and temperature.
 pub const WASHERS_AND_DRYERS: [i64; 3] = [WASHING_MACHINE, TUMBLE_DRYER, WASHER_DRYER];
 /// `State.status.value_raw` of a finished program.
 pub const END: i64 = 7;
+/// `State.status.value_raw` of a programme set to start later.
+const WAITING_TO_START: i64 = 4;
 
 /// e.g. "  Care so far: descaled 20× · degreased 13× · milk system cleaned 12×"; None if none is set.
 pub fn care_line(f: &FillingLevels) -> Option<String> {
@@ -706,12 +758,30 @@ pub fn twin_dos_line(f: &FillingLevels) -> Option<String> {
     ];
     let parts: Vec<_> = (1..)
         .zip(tanks)
-        .filter_map(|(i, level)| match level? {
-            0 => Some(format!("{i} empty")),
-            n => Some(format!("{i} {n}%")),
-        })
+        .filter_map(|(i, level)| percent(&i.to_string(), level))
         .collect();
     (!parts.is_empty()).then(|| format!("TwinDos: {}", parts.join(" · ")))
+}
+
+/// "Salt 40% · Rinse aid empty · PowerDisc 80%" for dishwashers; None if it reports none.
+pub fn dishwasher_line(f: &FillingLevels) -> Option<String> {
+    let parts: Vec<_> = [
+        ("Salt", f.salt_filling_level),
+        ("Rinse aid", f.rinse_aid_filling_level),
+        ("PowerDisc", f.power_disc_filling_level),
+    ]
+    .into_iter()
+    .filter_map(|(label, level)| percent(label, level))
+    .collect();
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
+/// "Salt 40%", or "Salt empty" at 0; None when the level is not reported.
+fn percent(label: &str, level: Option<i64>) -> Option<String> {
+    Some(match level? {
+        0 => format!("{label} empty"),
+        n => format!("{label} {n}%"),
+    })
 }
 
 /// Our own short summary of the owner's manual care table, printed under each coffee machine.
@@ -1247,6 +1317,47 @@ mod tests {
     }
 
     #[test]
+    fn utc_offsets_from_date_and_powershell() {
+        assert_eq!(offset_secs("+0200\n"), 7200);
+        assert_eq!(offset_secs("-03:30"), -12600);
+        assert_eq!(offset_secs("-0100"), -3600);
+        assert_eq!(offset_secs("7200"), 0);
+        assert_eq!(offset_secs(""), 0);
+    }
+
+    #[test]
+    fn dishwasher_line_skips_null_levels() {
+        let f: FillingLevels = serde_json::from_str(
+            r#"{"saltFillingLevel":0,"rinseAidFillingLevel":null,"powerDiscFillingLevel":80}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            dishwasher_line(&f).as_deref(),
+            Some("Salt empty · PowerDisc 80%")
+        );
+        assert_eq!(twin_dos_line(&f), None);
+    }
+
+    #[test]
+    fn dishwasher_waiting_shows_programme_and_start() {
+        let devices: Devices = serde_json::from_str(include_str!(
+            "../../../fixtures/devices.dishwasher-waiting.sample.json"
+        ))
+        .unwrap();
+        let line = status_line(&devices["000000000007"]);
+        assert!(
+            line.starts_with("G7310 Dishwasher: Waiting to start, ECO, starts at "),
+            "{line}"
+        );
+        assert!(line.ends_with(", 3h15 left"), "{line}");
+        // 2h30 after 23:00 local is 01:30; [0, 0] or missing means no delayed start.
+        let late = 23 * 3600 + 15;
+        assert_eq!(starts_at(&[2, 30], late).as_deref(), Some("01:30"));
+        assert_eq!(starts_at(&[0, 0], late), None);
+        assert_eq!(starts_at(&[], late), None);
+    }
+
+    #[test]
     fn history_lines_use_local_time_and_fall_back_to_our_names() {
         let runs: Vec<LastRun> = serde_json::from_str(include_str!(
             "../../../fixtures/washer.lastUsedPrograms.sample.json"
@@ -1282,6 +1393,9 @@ mod tests {
             milk_cleaning_counter: None,
             twin_dos_container1_filling_level: None,
             twin_dos_container2_filling_level: None,
+            salt_filling_level: None,
+            rinse_aid_filling_level: None,
+            power_disc_filling_level: None,
         };
         assert_eq!(care_line(&none), None);
     }

@@ -25,7 +25,7 @@ model allows different things, so a real report is what turns a row into "works"
 | Other coffee machines | Status, power, drinks from the machine's own list, light | Should work like the CM 6160; untested |
 | Washing machine | Status, program, phase, time left, start, stop, delayed start, last runs | `status` should show program, phase and time left; untested |
 | Tumble dryer | As washing machine, plus drying level | As above; untested |
-| Dishwasher | Status, program, phase, time left, start, stop, delayed start, salt / rinse aid / PowerDisc levels, last runs | Basic status only; untested ([#42](https://github.com/cubetes/freeMiele/issues/42)) |
+| Dishwasher | Status, program, phase, time left, start, stop, delayed start, salt / rinse aid / PowerDisc levels, last runs | `status` shows program, phase, time left and a delayed start ("starts at 14:30"); `care` shows salt, rinse aid and PowerDisc. Built from a sample, untested on a real dishwasher ([#42](https://github.com/cubetes/freeMiele/issues/42)) |
 | Oven, steam oven, microwave, combi | Status, program, temperatures, door, light, start, stop, power | Basic status only; untested |
 | Fridge, freezer, wine unit | Temperatures per zone, Holiday / Party / Sabbath mode, SuperCool / SuperFreeze | Basic status only; untested ([#30](https://github.com/cubetes/freeMiele/issues/30)) |
 | Hood | Status, fan level, light, colours, filter saturation | Basic status only; untested |
