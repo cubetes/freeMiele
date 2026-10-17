@@ -184,6 +184,8 @@ pub fn dump(token: &str) -> Result<serde_json::Value> {
                 "actions": part(id, "/actions"),
                 "programs": part(id, "/programs"),
                 "fillingLevels": part(id, "/fillingLevels"),
+                "lastUsedPrograms": part(id, "/lastUsedPrograms"),
+                "failureDetails": part(id, "/failureDetails"),
             })
         })
         .collect();
