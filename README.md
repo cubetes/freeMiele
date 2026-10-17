@@ -38,10 +38,11 @@ command moved to a new package in 0.3.
 On a Mac, a downloaded `miele` is blocked the first time because it isn't signed by Apple. Allow it once
 with `xattr -d com.apple.quarantine miele`.
 
-Your login is kept in the macOS Keychain (entry `miele-cli`), never in a file, so only the macOS
-builds remember it today ([#7](https://github.com/cubetes/freeMiele/issues/7): help wanted for
-Linux and Windows). After installing a new version, macOS asks once whether `miele` may read it:
-click **Always Allow**.
+Your login is kept in the system keychain (on macOS: the Keychain, entry `miele-cli`), never in a file.
+On Linux it uses the Secret Service (GNOME Keyring or KWallet) and on Windows the Credential Manager.
+macOS is the tested system. Linux and Windows are switched on but nobody has tried them yet:
+[help wanted, #7](https://github.com/cubetes/freeMiele/issues/7). After installing a new version,
+macOS asks once whether `miele` may read the login: click **Always Allow**.
 
 ## Before you start: get your Miele keys (5 minutes)
 
