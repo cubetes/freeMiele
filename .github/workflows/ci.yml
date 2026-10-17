@@ -16,16 +16,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        include:
-          # The Mac app needs Tauri's Linux system libraries; it is built and tested on macOS only.
-          - os: ubuntu-latest
-            skip: --exclude freemiele-app
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --all --check
-      - run: cargo test --workspace ${{ matrix.skip }}
-      - run: cargo clippy --workspace ${{ matrix.skip }} --all-targets -- -D warnings
+      - run: scripts/checks.sh

@@ -26,6 +26,9 @@ use tauri_plugin_notification::NotificationExt;
 
 const IN_USE: i64 = 5;
 const NOT_CONNECTED: i64 = 255;
+/// Set to a devices JSON file (e.g. a fixture) to show it instead of the live appliances, for
+/// screenshots and agents. Nothing is sent to Miele while it is set.
+const DEMO: &str = "FREEMIELE_DEMO";
 
 /// What the page draws for one appliance.
 #[derive(Serialize, Clone, PartialEq, Debug)]
@@ -306,6 +309,45 @@ fn login_card() -> Card {
     }
 }
 
+/// Draw one update of the appliances and send the washer alert. `seen` is, per washer, whether
+/// it was finished at the last update and whether its dot is showing.
+fn update(app: &AppHandle, devices: &Devices, seen: &mut HashMap<String, (bool, bool)>) {
+    let offline = devices
+        .values()
+        .all(|d| d.state.status.value_raw == NOT_CONNECTED);
+    let cards = sorted(devices)
+        .into_iter()
+        .map(|(id, d)| card(id, d))
+        .collect();
+    let titles = [tray_title(devices, true), tray_title(devices, false)];
+    let enabled = settings_now(app).washer_alert;
+    let mut dot = false;
+    for (id, d) in sorted(devices) {
+        if d.ident.kind.value_raw == COFFEE_MACHINE {
+            continue;
+        }
+        let before = seen.get(id).copied();
+        let (notify, now) = washer_alert(
+            before,
+            d.state.status.value_raw == END,
+            d.state.signal_door,
+            enabled,
+        );
+        if notify {
+            let name = activity(d).0.unwrap_or_else(|| "Washer-dryer".into());
+            let _ = app
+                .notification()
+                .builder()
+                .title(format!("{name} finished"))
+                .body("Washer-dryer is done. Open the door to clear the alert.")
+                .show();
+        }
+        dot |= now.1;
+        seen.insert(id.clone(), now);
+    }
+    show(app, cards, titles, offline, dot);
+}
+
 // lean: an old connection after logout or a new login is only ignored, not stopped (core's watch
 // never returns); it retries quietly every minute. Add a way to stop it if that ever matters.
 fn watch(app: AppHandle) {
@@ -314,48 +356,27 @@ fn watch(app: AppHandle) {
         .generation
         .fetch_add(1, Ordering::SeqCst)
         + 1;
+    if let Ok(path) = std::env::var(DEMO) {
+        let devices = std::fs::read_to_string(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|s| serde_json::from_str::<Devices>(&s).map_err(|e| e.to_string()));
+        match devices {
+            Ok(devices) => update(&app, &devices, &mut HashMap::new()),
+            Err(e) => {
+                let card = offline_card(format!("Demo file {path}: {e}"));
+                show(&app, vec![card], Default::default(), true, false);
+            }
+        }
+        return;
+    }
     match Session::load() {
         Ok(mut session) => {
-            // Per washer: was it finished at the last update, and is its dot showing.
             let mut seen: HashMap<String, (bool, bool)> = HashMap::new();
             freemiele::watch(&mut session, move |devices, _| {
                 if app.state::<Panel>().generation.load(Ordering::SeqCst) != mine {
                     return;
                 }
-                let offline = devices
-                    .values()
-                    .all(|d| d.state.status.value_raw == NOT_CONNECTED);
-                let cards = sorted(devices)
-                    .into_iter()
-                    .map(|(id, d)| card(id, d))
-                    .collect();
-                let titles = [tray_title(devices, true), tray_title(devices, false)];
-                let enabled = settings_now(&app).washer_alert;
-                let mut dot = false;
-                for (id, d) in sorted(devices) {
-                    if d.ident.kind.value_raw == COFFEE_MACHINE {
-                        continue;
-                    }
-                    let before = seen.get(id).copied();
-                    let (notify, now) = washer_alert(
-                        before,
-                        d.state.status.value_raw == END,
-                        d.state.signal_door,
-                        enabled,
-                    );
-                    if notify {
-                        let name = activity(d).0.unwrap_or_else(|| "Washer-dryer".into());
-                        let _ = app
-                            .notification()
-                            .builder()
-                            .title(format!("{name} finished"))
-                            .body("Washer-dryer is done. Open the door to clear the alert.")
-                            .show();
-                    }
-                    dot |= now.1;
-                    seen.insert(id.clone(), now);
-                }
-                show(&app, cards, titles, offline, dot);
+                update(&app, devices, &mut seen);
             })
         }
         Err(e) => {
@@ -386,6 +407,9 @@ fn plain(e: Box<dyn std::error::Error>) -> String {
 async fn miele<T: Send + 'static>(
     f: impl FnOnce(&str) -> freemiele::Result<T> + Send + 'static,
 ) -> Result<T, String> {
+    if std::env::var_os(DEMO).is_some() {
+        return Err("Demo mode: nothing is sent to Miele.".into());
+    }
     tauri::async_runtime::spawn_blocking(move || {
         Session::load()
             .and_then(|mut s| s.access_token())
