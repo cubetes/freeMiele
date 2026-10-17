@@ -1,0 +1,49 @@
+{
+  "000000000007": {
+    "ident": {
+      "type": {
+        "key_localized": "Device type",
+        "value_raw": 7,
+        "value_localized": "Dishwasher"
+      },
+      "deviceName": "",
+      "deviceIdentLabel": {
+        "fabNumber": "000000000007",
+        "techType": "G7310"
+      }
+    },
+    "state": {
+      "ProgramID": {
+        "value_raw": 3,
+        "value_localized": "",
+        "key_localized": "Program name"
+      },
+      "status": {
+        "value_raw": 4,
+        "value_localized": "Waiting to start",
+        "key_localized": "status"
+      },
+      "programType": {
+        "value_raw": 0,
+        "value_localized": "",
+        "key_localized": "Program type"
+      },
+      "programPhase": {
+        "value_raw": 1792,
+        "value_localized": "",
+        "key_localized": "Program phase"
+      },
+      "remainingTime": [3, 15],
+      "startTime": [2, 30],
+      "elapsedTime": [0, 0],
+      "signalInfo": false,
+      "signalFailure": false,
+      "signalDoor": false,
+      "remoteEnable": {
+        "fullRemoteControl": true,
+        "smartGrid": false,
+        "mobileStart": true
+      }
+    }
+  }
+}
