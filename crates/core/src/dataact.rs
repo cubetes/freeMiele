@@ -112,13 +112,13 @@ pub struct Runs {
 
 // Dates. The API sends ISO-8601 UTC; std has no time zones, so callers pass the UTC offset in seconds.
 
-const MONTHS: [&str; 12] = [
+pub(crate) const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
 /// Seconds since 1970 for e.g. "2026-10-11T20:08:00Z" (also "+02:00" zones; fractions ignored).
 /// Missing parts default as in the spec: month and day 1, time 00:00:00, zone UTC.
-fn epoch(s: &str) -> Option<i64> {
+pub(crate) fn epoch(s: &str) -> Option<i64> {
     let (date, time) = s.split_once('T').unwrap_or((s, ""));
     let (clock, zone) = match time.find(['Z', '+', '-']) {
         Some(i) => time.split_at(i),
@@ -153,7 +153,7 @@ fn epoch(s: &str) -> Option<i64> {
 }
 
 /// (year, month 1-12, day, hour, minute) of an ISO-8601 string at the given UTC offset.
-fn local(s: &str, offset: i64) -> Option<(i64, usize, i64, i64, i64)> {
+pub(crate) fn local(s: &str, offset: i64) -> Option<(i64, usize, i64, i64, i64)> {
     let t = epoch(s)? + offset;
     let (days, secs) = (t.div_euclid(86400), t.rem_euclid(86400));
     // Civil date from days since 1970 (Howard Hinnant's civil_from_days).
