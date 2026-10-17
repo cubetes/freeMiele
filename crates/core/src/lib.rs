@@ -59,6 +59,18 @@ pub struct State {
     pub program_id: Reading,
     #[serde(default)]
     pub program_phase: Reading,
+    // Washers and dryers; value_raw is null when the programme has no spin speed.
+    #[serde(default)]
+    pub spinning_speed: Reading,
+    #[serde(default)]
+    pub target_temperature: Vec<Temperature>,
+}
+
+/// A temperature setting. `value_raw` is hundredths of °C (4000 = 40 °C); -32768 = not used.
+/// value_localized is a number here, not text, so it is not read.
+#[derive(Deserialize)]
+pub struct Temperature {
+    pub value_raw: i64,
 }
 
 #[derive(Deserialize)]
@@ -482,6 +494,33 @@ pub fn activity(d: &Device) -> (Option<String>, Option<String>) {
     (reading_text(&d.state.program_id, program_name), phase)
 }
 
+/// The programme settings of a washer or dryer at work, e.g. "40 °C · 1200 rpm".
+/// Parts the machine leaves out (missing, null, 0 or -32768) are skipped; None if none is left.
+pub fn details(d: &Device) -> Option<String> {
+    if !WASHERS_AND_DRYERS.contains(&d.ident.kind.value_raw)
+        || [0, 1, 255].contains(&d.state.status.value_raw)
+    {
+        return None;
+    }
+    let temp = d
+        .state
+        .target_temperature
+        .first()
+        .map(|t| t.value_raw / 100);
+    let parts: Vec<_> = [
+        temp.filter(|&t| t > 0).map(|t| format!("{t} °C")),
+        d.state
+            .spinning_speed
+            .value_raw
+            .filter(|&r| r > 0)
+            .map(|r| format!("{r} rpm")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
 /// One line per device, e.g. "CM6160 Coffee Machine: Off (mobile start off) — needs attention".
 /// An appliance at work adds its program and phase: "In use, coffee · Grinding".
 /// A washer or dryer that has finished says "Finished, Sportswear", with no phase or time left.
@@ -492,6 +531,9 @@ pub fn status_line(d: &Device) -> String {
         line += &format!(", {program}");
         if let Some(phase) = phase {
             line += &format!(" · {phase}");
+        }
+        if let Some(details) = details(d) {
+            line += &format!(" ({details})");
         }
     }
     let [h, m] = d.state.remaining_time;
@@ -633,6 +675,54 @@ pub struct FillingLevels {
     pub descaling_counter: Option<i64>,
     pub degreasing_counter: Option<i64>,
     pub milk_cleaning_counter: Option<i64>,
+    // Percent full (the owner's WTR860: 0 = empty tank).
+    pub twin_dos_container1_filling_level: Option<i64>,
+    pub twin_dos_container2_filling_level: Option<i64>,
+}
+
+/// One finished run, from `GET /devices/{id}/lastUsedPrograms` (a JSON array). The consumption
+/// fields are always null on our machines, so they are not read.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LastRun {
+    #[serde(rename = "ProgramID")]
+    pub program_id: Reading,
+    #[serde(default)]
+    pub start_at: Option<String>,
+    #[serde(default)]
+    pub end_at: Option<String>,
+}
+
+/// "Mon 2 Mar 18:00 · Rinse out lint · 8 min": start in local time at `offset` seconds from UTC.
+pub fn history_line(r: &LastRun, offset: i64) -> String {
+    use dataact::{MONTHS, epoch, local};
+    let name = match (&r.program_id.value_localized, r.program_id.value_raw) {
+        (Some(t), _) if !t.is_empty() => t.clone(),
+        // Name from Home Assistant's Miele integration (Apache-2.0)
+        (_, Some(48)) => "Rinse out lint".into(),
+        (_, code) => format!("Programme {}", code.map_or("?".into(), |c| c.to_string())),
+    };
+    let mut parts = Vec::new();
+    if let (Some(start), Some((_, mo, d, h, mi))) = (
+        r.start_at.as_deref().and_then(epoch),
+        r.start_at.as_deref().and_then(|s| local(s, offset)),
+    ) {
+        let weekday = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"]
+            [(start + offset).div_euclid(86400).rem_euclid(7) as usize];
+        parts.push(format!("{weekday} {d} {} {h:02}:{mi:02}", MONTHS[mo - 1]));
+    }
+    parts.push(name);
+    let at = |t: &Option<String>| t.as_deref().and_then(epoch);
+    if let (Some(a), Some(b)) = (at(&r.start_at), at(&r.end_at))
+        && b >= a
+    {
+        let mins = (b - a + 30) / 60;
+        parts.push(match mins {
+            0..60 => format!("{mins} min"),
+            _ => format!("{} h {:02} min", mins / 60, mins % 60),
+        });
+    }
+    parts.join(" · ")
 }
 
 /// `Ident.kind.value_raw` of a coffee machine.
@@ -640,6 +730,8 @@ pub const COFFEE_MACHINE: i64 = 17;
 const WASHING_MACHINE: i64 = 1;
 const TUMBLE_DRYER: i64 = 2;
 const WASHER_DRYER: i64 = 24;
+/// The types Miele keeps a run history for, and that report spin speed and temperature.
+pub const WASHERS_AND_DRYERS: [i64; 3] = [WASHING_MACHINE, TUMBLE_DRYER, WASHER_DRYER];
 /// `State.status.value_raw` of a finished program.
 pub const END: i64 = 7;
 
@@ -654,6 +746,22 @@ pub fn care_line(f: &FillingLevels) -> Option<String> {
     .filter_map(|(label, n)| n.map(|n| format!("{label} {n}×")))
     .collect();
     (!parts.is_empty()).then(|| format!("  Care so far: {}", parts.join(" · ")))
+}
+
+/// "TwinDos: 1 empty · 2 28%" for washers with automatic dosing; None without TwinDos.
+pub fn twin_dos_line(f: &FillingLevels) -> Option<String> {
+    let tanks = [
+        f.twin_dos_container1_filling_level,
+        f.twin_dos_container2_filling_level,
+    ];
+    let parts: Vec<_> = (1..)
+        .zip(tanks)
+        .filter_map(|(i, level)| match level? {
+            0 => Some(format!("{i} empty")),
+            n => Some(format!("{i} {n}%")),
+        })
+        .collect();
+    (!parts.is_empty()).then(|| format!("TwinDos: {}", parts.join(" · ")))
 }
 
 /// Our own short summary of the owner's manual care table, printed under each coffee machine.
@@ -1102,7 +1210,7 @@ mod tests {
         let d = devices.get_mut("000000000024").unwrap();
         assert_eq!(
             status_line(d),
-            "WTR860 Washer dryer: In use, Sportswear · Main wash, 0h23 left (mobile start off)"
+            "WTR860 Washer dryer: In use, Sportswear · Main wash (40 °C · 1200 rpm), 0h23 left (mobile start off)"
         );
         d.state.status = Value {
             value_raw: 7,
@@ -1110,8 +1218,62 @@ mod tests {
         };
         assert_eq!(
             status_line(d),
-            "WTR860 Washer dryer: Finished, Sportswear (mobile start off)"
+            "WTR860 Washer dryer: Finished, Sportswear (40 °C · 1200 rpm) (mobile start off)"
         );
+    }
+
+    #[test]
+    fn details_skip_unused_settings_and_other_appliances() {
+        let mut devices: Devices = serde_json::from_str(include_str!(
+            "../../../fixtures/devices.washer-running.sample.json"
+        ))
+        .unwrap();
+        let d = devices.get_mut("000000000024").unwrap();
+        assert_eq!(details(d).as_deref(), Some("40 °C · 1200 rpm"));
+        d.state.target_temperature[0].value_raw = -32768;
+        assert_eq!(details(d).as_deref(), Some("1200 rpm"));
+        d.state.spinning_speed.value_raw = None;
+        assert_eq!(details(d), None);
+        let coffee: Devices =
+            serde_json::from_str(include_str!("../../../fixtures/devices.sample.json")).unwrap();
+        assert_eq!(details(&coffee["000123456789"]), None);
+    }
+
+    #[test]
+    fn twin_dos_line_says_empty_and_percent() {
+        let f: FillingLevels = serde_json::from_str(
+            r#"{"twinDosContainer1FillingLevel":0,"twinDosContainer2FillingLevel":28}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            twin_dos_line(&f).as_deref(),
+            Some("TwinDos: 1 empty · 2 28%")
+        );
+        let coffee: FillingLevels =
+            serde_json::from_str(include_str!("../../../fixtures/fillingLevels.sample.json"))
+                .unwrap();
+        assert_eq!(twin_dos_line(&coffee), None);
+    }
+
+    #[test]
+    fn history_lines_use_local_time_and_fall_back_to_our_names() {
+        let runs: Vec<LastRun> = serde_json::from_str(include_str!(
+            "../../../fixtures/washer.lastUsedPrograms.sample.json"
+        ))
+        .unwrap();
+        let lines: Vec<_> = runs.iter().map(|r| history_line(r, 3600)).collect();
+        assert_eq!(lines[0], "Mon 2 Mar 18:00 · Rinse out lint · 8 min");
+        assert_eq!(lines[1], "Mon 2 Mar 16:30 · Warm air · 46 min");
+        assert_eq!(lines[2], "Sun 1 Mar 09:05 · Automatic plus · 1 h 34 min");
+        // No end, or an end before the start: no duration rather than an error or a negative one.
+        let odd: Vec<LastRun> = serde_json::from_str(
+            r#"[{"ProgramID":{"value_raw":31,"value_localized":"Automatic plus"},"startAt":"2026-03-01T08:05:00Z"},
+                {"ProgramID":{"value_raw":31,"value_localized":"Automatic plus"},"startAt":"2026-03-01T08:05:00Z","endAt":"2026-03-01T08:00:00Z"}]"#,
+        )
+        .unwrap();
+        for r in &odd {
+            assert_eq!(history_line(r, 3600), "Sun 1 Mar 09:05 · Automatic plus");
+        }
     }
 
     #[test]
@@ -1127,6 +1289,8 @@ mod tests {
             descaling_counter: None,
             degreasing_counter: None,
             milk_cleaning_counter: None,
+            twin_dos_container1_filling_level: None,
+            twin_dos_container2_filling_level: None,
         };
         assert_eq!(care_line(&none), None);
     }
@@ -1208,7 +1372,10 @@ mod tests {
         // On connect every appliance is printed once; after that only what changed.
         assert_eq!(printed.len(), 9);
         assert_eq!(printed[0], "CM6160 Coffee machine: Off (mobile start off)");
-        assert!(printed[2].ends_with("Sportswear · Rinsing, 0h23 left (mobile start off)"));
+        assert!(
+            printed[2]
+                .ends_with("Sportswear · Rinsing (40 °C · 1200 rpm), 0h23 left (mobile start off)")
+        );
         // Same state again prints nothing.
         let devices: Devices =
             serde_json::from_str(include_str!("../../../fixtures/devices.sample.json")).unwrap();

@@ -5,8 +5,8 @@
 mod settings;
 
 use freemiele::{
-    COFFEE_MACHINE, Device, Devices, END, NOT_LOGGED_IN, Outcome, Program, Rejected, Session,
-    activity, find_program, get,
+    COFFEE_MACHINE, Device, Devices, END, FillingLevels, NOT_LOGGED_IN, Outcome, Program, Rejected,
+    Session, WASHERS_AND_DRYERS, activity, find_program, get,
 };
 use serde::{Deserialize, Serialize};
 use settings::Settings;
@@ -41,6 +41,8 @@ fn not_in_demo() -> Result<(), String> {
 /// What the page draws for one appliance.
 #[derive(Serialize, Clone, PartialEq, Debug)]
 struct Card {
+    /// The appliance id when it has care data to show (coffee machine, washer, dryer); else empty.
+    id: String,
     /// "Coffee machine · CM6160"
     label: String,
     /// ready, running, attention, fault or off: picks the chip colour
@@ -48,6 +50,8 @@ struct Card {
     chip: String,
     title: String,
     sub: Option<String>,
+    /// Minutes left, set exactly when the title shows the time left.
+    minutes_left: Option<u32>,
     /// Percent done, for appliances that report elapsed time.
     progress: Option<u8>,
     /// Set when the page should draw the coffee controls.
@@ -155,7 +159,10 @@ fn card(id: &str, d: &Device) -> Card {
         None => base,
     };
     let mut sub = if phase.is_some() || status == END {
-        program
+        match (program, freemiele::details(d)) {
+            (Some(p), Some(more)) => Some(format!("{p} · {more}")),
+            (p, more) => p.or(more),
+        }
     } else if s.signal_failure {
         Some("Look at the appliance.".into())
     } else if attention {
@@ -201,7 +208,14 @@ fn card(id: &str, d: &Device) -> Card {
     let total = done + h * 60 + m;
     let progress = (status == IN_USE && d.ident.kind.value_raw != COFFEE_MACHINE && total > 0)
         .then(|| (done * 100 / total) as u8);
+    let kind = d.ident.kind.value_raw;
+    let has_care = kind == COFFEE_MACHINE || WASHERS_AND_DRYERS.contains(&kind);
     Card {
+        id: if has_care {
+            id.to_string()
+        } else {
+            String::new()
+        },
         label: format!(
             "{} · {}",
             d.ident.kind.value_localized, d.ident.device_ident_label.tech_type
@@ -210,6 +224,7 @@ fn card(id: &str, d: &Device) -> Card {
         chip,
         title,
         sub,
+        minutes_left: left.as_ref().map(|_| h * 60 + m),
         progress,
         coffee,
         login: false,
@@ -278,11 +293,13 @@ fn show(app: &AppHandle, cards: Vec<Card>, titles: [String; 2], offline: bool, d
 
 fn offline_card(message: String) -> Card {
     Card {
+        id: String::new(),
         label: "freeMiele".into(),
         tone: "attention",
         chip: "Login needed".into(),
         title: "Can't reach Miele".into(),
         sub: Some(message),
+        minutes_left: None,
         progress: None,
         coffee: None,
         login: false,
@@ -306,11 +323,13 @@ fn washer_alert(
 /// The card that asks for the keys when there is no saved login.
 fn login_card() -> Card {
     Card {
+        id: String::new(),
         label: "freeMiele".into(),
         tone: "attention",
         chip: "Login needed".into(),
         title: "Log in to Miele".into(),
         sub: None,
+        minutes_left: None,
         progress: None,
         coffee: None,
         login: true,
@@ -433,6 +452,18 @@ async fn drinks(app: AppHandle, device_id: String) -> Result<Drinks, String> {
     miele(move |token| {
         let programs: Vec<Program> = get(token, &format!("/devices/{device_id}/programs"))?;
         Ok(drinks_of(&programs, &favourites))
+    })
+    .await
+}
+
+/// The care or TwinDos line for one appliance. Nothing if it has neither.
+#[tauri::command]
+async fn care(device_id: String) -> Result<Option<String>, String> {
+    miele(move |token| {
+        let f: FillingLevels = get(token, &format!("/devices/{device_id}/fillingLevels"))?;
+        Ok(freemiele::care_line(&f)
+            .or_else(|| freemiele::twin_dos_line(&f))
+            .map(|line| line.trim().to_string()))
     })
     .await
 }
@@ -780,6 +811,7 @@ fn main() {
             fit,
             more,
             drinks,
+            care,
             brew,
             power,
             other_drinks,
@@ -873,6 +905,7 @@ mod tests {
             Some("Turn the machine on to make a drink.")
         );
         assert!(matches!(c.coffee, Some(Coffee { on: false, .. })));
+        assert_eq!(c.minutes_left, None);
     }
 
     #[test]
@@ -936,7 +969,8 @@ mod tests {
         let c = card_of(&devices);
         assert_eq!(c.tone, "running");
         assert_eq!(c.title, "Main wash · 23 min left");
-        assert_eq!(c.sub.as_deref(), Some("Sportswear"));
+        assert_eq!(c.sub.as_deref(), Some("Sportswear · 40 °C · 1200 rpm"));
+        assert_eq!(c.minutes_left, Some(23));
         assert_eq!(c.progress, Some(62)); // 38 min done, 23 left
         assert_eq!(tray_title(&devices, true), "23 min");
         assert_eq!(tray_title(&devices, false), "");

@@ -7,6 +7,8 @@ const picked = new Map(); // id -> { id, name }
 const busy = new Set(); // ids with a request in flight
 const notes = new Map(); // id -> result text, shown for a few seconds
 const timers = new Map();
+const care = new Map(); // id -> care or TwinDos line, the last answer
+const asked = new Set(); // ids asked since the panel opened: once each (Miele rate-limits)
 let last = [];
 let menuFor = null;
 const TICK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:var(--brand)"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
@@ -184,6 +186,12 @@ function render(cards) {
         .then((d) => { drinks.set(coffee.id, d); render(last); });
     }
   }
+  for (const { id } of cards) {
+    if (id && !asked.has(id)) {
+      asked.add(id);
+      tauri?.core.invoke('care', { deviceId: id }).then((t) => { care.set(id, t); render(last); }, () => {});
+    }
+  }
   list.replaceChildren(...cards.map((c) => {
     const card = el('article', 'card');
     const meta = el('div', 'meta');
@@ -192,6 +200,10 @@ function render(cards) {
     text.append(el('div', 'title', c.title));
     if (c.coffee?.on && !c.coffee.mobile_start) text.append(steps());
     if (c.sub) text.append(el('div', 'sub', c.sub));
+    if (c.minutes_left != null) {
+      const at = new Date(Date.now() + c.minutes_left * 60000);
+      text.append(el('div', 'sub', `done at ${at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`));
+    }
     card.append(meta, text);
     if (c.login) loginForm(card);
     if (c.progress != null) {
@@ -206,6 +218,7 @@ function render(cards) {
       card.append(bar);
     }
     if (c.coffee) coffeeControls(card, c.coffee);
+    if (care.get(c.id)) card.append(el('div', /empty/.test(care.get(c.id)) ? 'sub care low' : 'sub care', care.get(c.id)));
     return card;
   }));
 }
@@ -222,5 +235,10 @@ if (tauri) {
   });
   // Favourites changed in Settings: fetch the drinks again.
   tauri.event.listen('settings', () => { drinks.clear(); render(last); });
+  // Ask again each time the panel is opened, not on every live update.
+  // Ask again each time the panel opens; keep showing the old line until the new one arrives.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) { asked.clear(); render(last); }
+  });
   tauri.core.invoke('cards').then(render);
 }
