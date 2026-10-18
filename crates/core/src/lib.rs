@@ -69,11 +69,54 @@ pub struct State {
     // Washers and dryers; value_raw is null when the programme has no spin speed.
     #[serde(default)]
     pub spinning_speed: Reading,
+    // Tumble dryers: e.g. "Normal"; empty when the programme has none.
+    #[serde(default)]
+    pub drying_step: Reading,
+    // Water and energy used so far by the running programme; null when unsupported.
+    #[serde(default)]
+    pub eco_feedback: Option<EcoFeedback>,
     #[serde(default)]
     pub target_temperature: Vec<Temperature>,
     // Measured temperature per compartment: fridges, freezers and wine units.
     #[serde(default)]
     pub temperature: Vec<Temperature>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EcoFeedback {
+    pub current_water_consumption: Option<Amount>,
+    pub current_energy_consumption: Option<Amount>,
+}
+
+/// A quantity with its unit, e.g. 12 l or 0.4 kWh.
+#[derive(Deserialize)]
+pub struct Amount {
+    pub unit: String,
+    pub value: f64,
+}
+
+/// "12 l · 0.4 kWh"; amounts that are missing or zero are skipped, None if none is left.
+fn amounts(water: &Option<Amount>, energy: &Option<Amount>) -> Option<String> {
+    let parts: Vec<_> = [water, energy]
+        .into_iter()
+        .flatten()
+        .filter(|a| a.value > 0.0)
+        .map(|a| format!("{} {}", a.value, a.unit))
+        .collect();
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
+/// "so far 12 l · 0.4 kWh" while a washer, dryer or dishwasher runs; None when Miele sends
+/// nothing or zeros.
+pub fn eco_line(d: &Device) -> Option<String> {
+    let running = [5, 6].contains(&d.state.status.value_raw);
+    let eco = d.state.eco_feedback.as_ref().filter(|_| running)?;
+    amounts(
+        &eco.current_water_consumption,
+        &eco.current_energy_consumption,
+    )
+    .map(|a| format!("so far {a}"))
 }
 
 /// A temperature setting. `value_raw` is hundredths of °C (4000 = 40 °C); -32768 = not used.
@@ -470,6 +513,11 @@ pub fn details(d: &Device) -> Option<String> {
             .value_raw
             .filter(|&r| r > 0)
             .map(|r| format!("{r} rpm")),
+        d.state
+            .drying_step
+            .value_localized
+            .clone()
+            .filter(|t| !t.is_empty()),
     ]
     .into_iter()
     .flatten()
@@ -508,6 +556,9 @@ pub fn status_line(d: &Device) -> String {
         line += &format!(", {}", shown.join(" · "));
         if let Some(details) = details(d) {
             line += &format!(" ({details})");
+        }
+        if let Some(eco) = eco_line(d) {
+            line += &format!(" · {eco}");
         }
     }
     if let Some(temps) = compartments(d) {
@@ -713,7 +764,7 @@ pub struct FillingLevels {
 }
 
 /// One finished run, from `GET /devices/{id}/lastUsedPrograms` (a JSON array). The consumption
-/// fields are always null on our machines, so they are not read.
+/// fields are null on washer-dryers like the WTR860, so then nothing is shown.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LastRun {
@@ -723,6 +774,10 @@ pub struct LastRun {
     pub start_at: Option<String>,
     #[serde(default)]
     pub end_at: Option<String>,
+    #[serde(default)]
+    pub water_consumption: Option<Amount>,
+    #[serde(default)]
+    pub energy_consumption: Option<Amount>,
 }
 
 /// "Mon 2 Mar 18:00 · Rinse out lint · 8 min": start in local time at `offset` seconds from UTC.
@@ -754,6 +809,9 @@ pub fn history_line(r: &LastRun, offset: i64) -> String {
             0..60 => format!("{mins} min"),
             _ => format!("{} h {:02} min", mins / 60, mins % 60),
         });
+    }
+    if let Some(a) = amounts(&r.water_consumption, &r.energy_consumption) {
+        parts.push(format!("{a} (Miele's estimate)"));
     }
     parts.join(" · ")
 }
@@ -1332,6 +1390,9 @@ mod tests {
         .unwrap();
         let d = devices.get_mut("000000000024").unwrap();
         assert_eq!(details(d).as_deref(), Some("40 °C · 1200 rpm"));
+        d.state.drying_step.value_localized = Some("Normal".into());
+        assert_eq!(details(d).as_deref(), Some("40 °C · 1200 rpm · Normal"));
+        d.state.drying_step.value_localized = None;
         d.state.target_temperature[0].value_raw = -32768;
         assert_eq!(details(d).as_deref(), Some("1200 rpm"));
         d.state.spinning_speed.value_raw = None;
@@ -1339,6 +1400,39 @@ mod tests {
         let coffee: Devices =
             serde_json::from_str(include_str!("../../../fixtures/devices.sample.json")).unwrap();
         assert_eq!(details(&coffee["000123456789"]), None);
+    }
+
+    #[test]
+    fn eco_line_only_when_running_and_non_zero() {
+        let mut devices: Devices = serde_json::from_str(include_str!(
+            "../../../fixtures/devices.washer-running.sample.json"
+        ))
+        .unwrap();
+        let d = devices.get_mut("000000000024").unwrap();
+        assert_eq!(eco_line(d), None);
+        d.state.eco_feedback = serde_json::from_str(
+            r#"{"currentWaterConsumption":{"unit":"l","value":12},"currentEnergyConsumption":{"unit":"kWh","value":0.4}}"#,
+        )
+        .unwrap();
+        assert_eq!(eco_line(d).as_deref(), Some("so far 12 l · 0.4 kWh"));
+        assert!(status_line(d).contains("(40 °C · 1200 rpm) · so far 12 l · 0.4 kWh"));
+        d.state.eco_feedback = serde_json::from_str(
+            r#"{"currentWaterConsumption":{"unit":"l","value":0},"currentEnergyConsumption":null}"#,
+        )
+        .unwrap();
+        assert_eq!(eco_line(d), None);
+    }
+
+    #[test]
+    fn history_line_shows_consumption_when_sent() {
+        let r: LastRun = serde_json::from_str(
+            r#"{"ProgramID":{"value_raw":31,"value_localized":"Automatic plus"},"waterConsumption":{"unit":"l","value":46.0},"energyConsumption":{"unit":"kWh","value":0.29}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            history_line(&r, 0),
+            "Automatic plus · 46 l · 0.29 kWh (Miele's estimate)"
+        );
     }
 
     #[test]

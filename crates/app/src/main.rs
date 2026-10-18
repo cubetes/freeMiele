@@ -218,6 +218,9 @@ fn card(id: &str, d: &Device) -> Card {
     } else {
         None
     };
+    if let Some(eco) = freemiele::eco_line(d) {
+        sub = Some(sub.map_or(eco.clone(), |t| format!("{t} · {eco}")));
+    }
     // Controls unless a drink is being made or the machine has a fault.
     let coffee = (d.ident.kind.value_raw == COFFEE_MACHINE
         && !matches!(status, IN_USE | NOT_CONNECTED)
@@ -373,6 +376,15 @@ fn offline_card(message: String) -> Card {
     }
 }
 
+/// The card for a demo file that is missing or unreadable: no login wording, it is not a login problem.
+fn demo_error_card(path: &str, e: &str) -> Card {
+    Card {
+        chip: "Demo file".into(),
+        title: "Can't read the demo file".into(),
+        ..offline_card(format!("{path}: {e}"))
+    }
+}
+
 /// One washer update: `before` is (finished, dot) from the last update, None the first time we
 /// see it (already finished at start: no alert). Returns whether to notify, and the new (finished, dot).
 /// The dot stays until the door opens or the washer leaves Finished, even if the door shuts again.
@@ -458,8 +470,13 @@ fn watch(app: AppHandle) {
         match devices {
             Ok(devices) => update(&app, &devices, &mut HashMap::new()),
             Err(e) => {
-                let card = offline_card(format!("Demo file {path}: {e}"));
-                show(&app, vec![card], Default::default(), true, false);
+                show(
+                    &app,
+                    vec![demo_error_card(&path, &e)],
+                    Default::default(),
+                    true,
+                    false,
+                );
             }
         }
         return;
@@ -1055,6 +1072,27 @@ mod tests {
         assert_eq!(c.progress, Some(62)); // 38 min done, 23 left
         assert_eq!(tray_title(&devices, true), "23 min");
         assert_eq!(tray_title(&devices, false), "");
+    }
+
+    #[test]
+    fn running_washer_card_adds_water_and_energy_when_sent() {
+        let mut devices = washer();
+        devices.values_mut().next().unwrap().state.eco_feedback = serde_json::from_str(
+            r#"{"currentWaterConsumption":{"unit":"l","value":12},"currentEnergyConsumption":{"unit":"kWh","value":0.4}}"#,
+        )
+        .unwrap();
+        let c = card_of(&devices);
+        assert_eq!(
+            c.sub.as_deref(),
+            Some("Sportswear · 40 °C · 1200 rpm · so far 12 l · 0.4 kWh")
+        );
+    }
+
+    #[test]
+    fn unreadable_demo_file_is_not_a_login_problem() {
+        let c = demo_error_card("x.json", "No such file");
+        assert!(!c.login && !c.chip.contains("Login") && !c.title.contains("Miele"));
+        assert_eq!(c.sub.as_deref(), Some("x.json: No such file"));
     }
 
     #[test]
