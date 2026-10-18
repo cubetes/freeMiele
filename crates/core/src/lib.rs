@@ -587,6 +587,39 @@ pub fn status_line(d: &Device) -> String {
     line
 }
 
+/// Only these report a fault text through `GET /devices/{id}/failureDetails`.
+pub fn has_fault_text(kind: i64) -> bool {
+    WASHERS_AND_DRYERS.contains(&kind) || kind == DISHWASHER
+}
+
+/// Miele's words for a fault, e.g. "Water inlet blocked (11)", from a `failureDetails` reply.
+/// The reply's shape is not documented, so this reads the first text it finds. A number is shown
+/// only next to text, and a "text" that is only digits counts as no text.
+pub fn fault_line(v: &serde_json::Value) -> Option<String> {
+    let v = v.as_array().and_then(|a| a.first()).unwrap_or(v);
+    let text = ["text", "failureText", "description", "message", "failure"]
+        .iter()
+        .find_map(|k| {
+            let s = &v[*k];
+            s.as_str().or_else(|| s["value_localized"].as_str())
+        })
+        .map(str::trim)
+        .filter(|t| t.chars().any(|c| !c.is_ascii_digit() && !c.is_whitespace()))?;
+    let number = ["number", "failureNumber", "code", "failureCode"]
+        .iter()
+        .find_map(|k| match &v[*k] {
+            n if n.is_number() => Some(n.to_string()),
+            n => n.as_str().filter(|s| !s.is_empty()).map(String::from),
+        });
+    Some(number.map_or(text.to_string(), |n| format!("{text} ({n})")))
+}
+
+/// The fault text for one appliance; None when Miele has none or answers with an error.
+pub fn failure_line(token: &str, id: &str) -> Option<String> {
+    let v: serde_json::Value = get(token, &format!("/devices/{id}/failureDetails")).ok()?;
+    fault_line(&v)
+}
+
 /// "14:30" when an appliance waits for a delayed start; None otherwise.
 pub fn start_at(d: &Device) -> Option<String> {
     if d.state.status.value_raw != WAITING_TO_START {
@@ -1561,6 +1594,30 @@ mod tests {
             power_disc_filling_level: None,
         };
         assert_eq!(care_line(&none), None);
+    }
+
+    #[test]
+    fn reads_fault_text_and_ignores_the_rest() {
+        let say = |j: &str| fault_line(&serde_json::from_str(j).unwrap());
+        assert_eq!(
+            say(r#"{"text":"Water inlet blocked","number":11}"#).as_deref(),
+            Some("Water inlet blocked (11)")
+        );
+        assert_eq!(
+            say(r#"[{"failureText":{"value_raw":1,"value_localized":"Door open"}}]"#).as_deref(),
+            Some("Door open")
+        );
+        // A number alone, empty or odd replies: show nothing.
+        for j in [
+            r#"{"number":11}"#,
+            r#"{"text":"11"}"#,
+            "{}",
+            "[]",
+            "null",
+            r#""x""#,
+        ] {
+            assert_eq!(say(j), None, "{j}");
+        }
     }
 
     #[test]

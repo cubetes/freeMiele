@@ -7,6 +7,7 @@ const picked = new Map(); // id -> { id, name }
 const busy = new Set(); // ids with a request in flight
 const notes = new Map(); // id -> result text, shown for a few seconds
 const timers = new Map();
+const faults = new Map(); // id -> Miele's text for a fault, the last answer
 const care = new Map(); // id -> care or TwinDos line, the last answer
 const asked = new Set(); // ids asked since the panel opened: once each (Miele rate-limits)
 let last = [];
@@ -286,6 +287,12 @@ function render(cards) {
       tauri?.core.invoke('care', { deviceId: id }).then((t) => { care.set(id, t); render(last); }, () => {});
     }
   }
+  for (const { id, fault } of cards) {
+    if (fault && !asked.has('f' + id)) {
+      asked.add('f' + id);
+      tauri?.core.invoke('fault', { deviceId: id }).then((t) => { faults.set(id, t); render(last); }, () => {});
+    }
+  }
   if (openedAt === null && cards.length) openedAt = Date.now();
   // Motion only when a chip word changes; one polite announcement for those changes, nothing else.
   const spoken = [];
@@ -308,6 +315,7 @@ function render(cards) {
     text.append(meta, el('div', 'title', c.title));
     if (c.coffee?.on && !c.coffee.mobile_start) text.append(steps());
     if (c.sub) text.append(el('div', 'sub', c.sub));
+    if (c.fault && faults.get(c.id)) text.append(el('div', 'sub', faults.get(c.id)));
     if (c.minutes_left != null) {
       const at = new Date(Date.now() + c.minutes_left * 60000);
       text.append(el('div', 'sub', `done at ${at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`));

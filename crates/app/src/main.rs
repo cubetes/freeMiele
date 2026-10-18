@@ -57,6 +57,8 @@ struct Card {
     progress: Option<u8>,
     /// Set when the page should draw the coffee controls.
     coffee: Option<Coffee>,
+    /// Set when the page should ask Miele for the fault text (washer, dryer or dishwasher in fault).
+    fault: bool,
     /// Set when the page should draw the login form.
     login: bool,
     /// Which picture the page draws in the ring: a drink, a state or the kind of appliance.
@@ -295,6 +297,7 @@ fn card(id: &str, d: &Device) -> Card {
         minutes_left: left.as_ref().map(|_| h * 60 + m),
         progress,
         coffee,
+        fault: s.signal_failure && freemiele::has_fault_text(kind),
         login: false,
         icon,
     }
@@ -371,6 +374,7 @@ fn offline_card(message: String) -> Card {
         minutes_left: None,
         progress: None,
         coffee: None,
+        fault: false,
         login: false,
         icon: "offline",
     }
@@ -411,6 +415,7 @@ fn login_card() -> Card {
         minutes_left: None,
         progress: None,
         coffee: None,
+        fault: false,
         login: true,
         icon: "offline",
     }
@@ -552,6 +557,12 @@ async fn care(device_id: String) -> Result<Option<String>, String> {
             .map(|line| line.trim().to_string()))
     })
     .await
+}
+
+/// Miele's own text for a fault, if it gives one. Nothing on any error.
+#[tauri::command]
+async fn fault(device_id: String) -> Result<Option<String>, String> {
+    miele(move |token| Ok(freemiele::failure_line(token, &device_id))).await
 }
 
 /// What the card says once the machine has (or has not) shown the change.
@@ -910,6 +921,7 @@ fn main() {
             more,
             drinks,
             care,
+            fault,
             brew,
             power,
             other_drinks,
