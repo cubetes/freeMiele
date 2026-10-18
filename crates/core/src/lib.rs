@@ -166,9 +166,49 @@ pub struct Program {
     pub program: String,
 }
 
+/// The languages Miele's 3rd Party API has texts in. Anything else gets English.
+const LANGUAGES: [&str; 8] = ["da", "de", "en", "es", "fr", "it", "nb", "nl"];
+
+/// First two letters of the first set value, if Miele has that language, else "en".
+fn pick_language<'a>(values: impl IntoIterator<Item = &'a str>) -> &'static str {
+    let first = values.into_iter().find(|v| !v.is_empty()).unwrap_or("");
+    LANGUAGES
+        .into_iter()
+        .find(|l| first.get(..2) == Some(l))
+        .unwrap_or("en")
+}
+
+/// Language for Miele's texts: `FREEMIELE_LANG`, else the system language, else English.
+pub fn language() -> &'static str {
+    static LANGUAGE: std::sync::OnceLock<&str> = std::sync::OnceLock::new();
+    LANGUAGE.get_or_init(|| {
+        let var = |k: &str| std::env::var(k).unwrap_or_default();
+        let vars = ["FREEMIELE_LANG", "LC_ALL", "LC_MESSAGES", "LANG"].map(var);
+        // A Finder-launched Mac app has no LANG: ask macOS, e.g. "de_DE".
+        let mac = if vars.iter().all(|v| v.is_empty()) && cfg!(target_os = "macos") {
+            std::process::Command::new("defaults")
+                .args(["read", "-g", "AppleLocale"])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+        pick_language(vars.iter().map(String::as_str).chain([mac.as_str()]))
+    })
+}
+
 pub fn get<T: DeserializeOwned>(token: &str, path: &str) -> Result<T> {
+    get_in(token, path, language())
+}
+
+/// `get` with Miele's texts in a chosen language.
+fn get_in<T: DeserializeOwned>(token: &str, path: &str, language: &str) -> Result<T> {
     Ok(reqwest::blocking::Client::new()
-        .get(format!("{API}{path}"))
+        .get(Url::parse_with_params(
+            &format!("{API}{path}"),
+            [("language", language)],
+        )?)
         .bearer_auth(token)
         .send()?
         .error_for_status()?
@@ -225,7 +265,7 @@ pub fn dump(token: &str) -> Result<serde_json::Value> {
     use serde_json::{Value, json};
     // A failed part is recorded, not fatal. The reqwest error would carry the URL (and the id).
     let part = |id: &str, what: &str| -> Value {
-        get(token, &format!("/devices/{id}{what}?language=en")).unwrap_or_else(|e| {
+        get_in(token, &format!("/devices/{id}{what}"), "en").unwrap_or_else(|e| {
             let msg = match e.downcast::<reqwest::Error>() {
                 Ok(e) => e.without_url().to_string(),
                 Err(e) => e.to_string(),
@@ -233,7 +273,7 @@ pub fn dump(token: &str) -> Result<serde_json::Value> {
             json!({ "error": msg })
         })
     };
-    let devices: HashMap<String, Value> = get(token, "/devices?language=en")?;
+    let devices: HashMap<String, Value> = get_in(token, "/devices", "en")?;
     // Sorted by model so appliance-1, appliance-2… are the same on every run.
     let mut devices: Vec<_> = devices.iter().collect();
     devices.sort_by_key(|(_, d)| d["ident"]["deviceIdentLabel"]["techType"].to_string());
@@ -722,6 +762,7 @@ fn stream(
             .get(format!("{API}/devices/all/events"))
             .bearer_auth(token)
             .header("Accept", "text/event-stream")
+            .header("Accept-Language", language())
             .send()?
             .error_for_status()?)
     };
@@ -1677,6 +1718,15 @@ mod tests {
             code_from_request("GET /?state=abc&error=access_denied HTTP/1.1", "abc"),
             None
         );
+    }
+
+    #[test]
+    fn language_comes_from_the_first_set_value_and_must_be_supported() {
+        assert_eq!(pick_language(["", "de_DE.UTF-8", "fr"]), "de");
+        assert_eq!(pick_language(["nb_NO", "de"]), "nb");
+        assert_eq!(pick_language(["pt_BR", "de"]), "en");
+        assert_eq!(pick_language(["C"]), "en");
+        assert_eq!(pick_language(["", ""]), "en");
     }
 
     #[test]

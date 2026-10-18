@@ -259,11 +259,11 @@ fn card(id: &str, d: &Device) -> Card {
     let total = done + h * 60 + m;
     let progress = (status == IN_USE && d.ident.kind.value_raw != COFFEE_MACHINE && total > 0)
         .then(|| (done * 100 / total) as u8);
-    // A washer-dryer says "drying" in its phase; a dryer always dries.
+    // A dryer always dries. A washer-dryer's phase code is a drying one (the text depends on the language).
     let dries = kind == TUMBLE_DRYER
-        || phase
-            .as_ref()
-            .is_some_and(|p| p.to_lowercase().contains("dry"));
+        || s.program_phase
+            .value_raw
+            .is_some_and(|p| p == 280 || (513..=539).contains(&p));
     let icon = match status {
         NOT_CONNECTED => "offline",
         1 => "power",
