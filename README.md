@@ -140,6 +140,8 @@ brew install cubetes/freemiele/miele               # the command
 
 To run it from the source instead: `cargo run -p freemiele-app`.
 
+Miele's texts (programme and status names) follow your system language. Set `FREEMIELE_LANG` (da, de, en, es, fr, it, nb or nl) to choose another.
+
 macOS asks once to let it read the saved login; click Always Allow.
 
 ## Help us support more appliances

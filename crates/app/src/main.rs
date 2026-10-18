@@ -7,7 +7,7 @@ mod settings;
 use freemiele::{
     COFFEE_MACHINE, COOLERS, DISHWASHER, Device, Devices, END, FillingLevels, NOT_LOGGED_IN,
     Outcome, Program, Rejected, Session, TUMBLE_DRYER, WASHERS_AND_DRYERS, activity, compartments,
-    find_program, get, start_at,
+    find_program, get, get_in, start_at,
 };
 use serde::{Deserialize, Serialize};
 use settings::Settings;
@@ -57,6 +57,8 @@ struct Card {
     progress: Option<u8>,
     /// Set when the page should draw the coffee controls.
     coffee: Option<Coffee>,
+    /// Set when the page should ask Miele for the fault text (washer, dryer or dishwasher in fault).
+    fault: bool,
     /// Set when the page should draw the login form.
     login: bool,
     /// Which picture the page draws in the ring: a drink, a state or the kind of appliance.
@@ -218,6 +220,9 @@ fn card(id: &str, d: &Device) -> Card {
     } else {
         None
     };
+    if let Some(eco) = freemiele::eco_line(d) {
+        sub = Some(sub.map_or(eco.clone(), |t| format!("{t} · {eco}")));
+    }
     // Controls unless a drink is being made or the machine has a fault.
     let coffee = (d.ident.kind.value_raw == COFFEE_MACHINE
         && !matches!(status, IN_USE | NOT_CONNECTED)
@@ -254,11 +259,11 @@ fn card(id: &str, d: &Device) -> Card {
     let total = done + h * 60 + m;
     let progress = (status == IN_USE && d.ident.kind.value_raw != COFFEE_MACHINE && total > 0)
         .then(|| (done * 100 / total) as u8);
-    // A washer-dryer says "drying" in its phase; a dryer always dries.
+    // A dryer always dries. A washer-dryer's phase code is a drying one (the text depends on the language).
     let dries = kind == TUMBLE_DRYER
-        || phase
-            .as_ref()
-            .is_some_and(|p| p.to_lowercase().contains("dry"));
+        || s.program_phase
+            .value_raw
+            .is_some_and(|p| matches!(p, 280 | 514..=518 | 520 | 523 | 524 | 528 | 529 | 538));
     let icon = match status {
         NOT_CONNECTED => "offline",
         1 => "power",
@@ -292,6 +297,7 @@ fn card(id: &str, d: &Device) -> Card {
         minutes_left: left.as_ref().map(|_| h * 60 + m),
         progress,
         coffee,
+        fault: s.signal_failure && freemiele::has_fault_text(kind),
         login: false,
         icon,
     }
@@ -368,8 +374,18 @@ fn offline_card(message: String) -> Card {
         minutes_left: None,
         progress: None,
         coffee: None,
+        fault: false,
         login: false,
         icon: "offline",
+    }
+}
+
+/// The card for a demo file that is missing or unreadable: no login wording, it is not a login problem.
+fn demo_error_card(path: &str, e: &str) -> Card {
+    Card {
+        chip: "Demo file".into(),
+        title: "Can't read the demo file".into(),
+        ..offline_card(format!("{path}: {e}"))
     }
 }
 
@@ -399,6 +415,7 @@ fn login_card() -> Card {
         minutes_left: None,
         progress: None,
         coffee: None,
+        fault: false,
         login: true,
         icon: "offline",
     }
@@ -458,8 +475,13 @@ fn watch(app: AppHandle) {
         match devices {
             Ok(devices) => update(&app, &devices, &mut HashMap::new()),
             Err(e) => {
-                let card = offline_card(format!("Demo file {path}: {e}"));
-                show(&app, vec![card], Default::default(), true, false);
+                show(
+                    &app,
+                    vec![demo_error_card(&path, &e)],
+                    Default::default(),
+                    true,
+                    false,
+                );
             }
         }
         return;
@@ -518,7 +540,8 @@ async fn miele<T: Send + 'static>(
 async fn drinks(app: AppHandle, device_id: String) -> Result<Drinks, String> {
     let favourites = settings_now(&app).favourites;
     miele(move |token| {
-        let programs: Vec<Program> = get(token, &format!("/devices/{device_id}/programs"))?;
+        let programs: Vec<Program> =
+            get_in(token, &format!("/devices/{device_id}/programs"), "en")?;
         Ok(drinks_of(&programs, &favourites))
     })
     .await
@@ -535,6 +558,12 @@ async fn care(device_id: String) -> Result<Option<String>, String> {
             .map(|line| line.trim().to_string()))
     })
     .await
+}
+
+/// Miele's own text for a fault, if it gives one. Nothing on any error.
+#[tauri::command]
+async fn fault(device_id: String) -> Result<Option<String>, String> {
+    miele(move |token| Ok(freemiele::failure_line(token, &device_id))).await
 }
 
 /// What the card says once the machine has (or has not) shown the change.
@@ -721,7 +750,9 @@ async fn machine() -> Result<Option<Machine>, String> {
             .into_iter()
             .find(|(_, d)| d.ident.kind.value_raw == COFFEE_MACHINE);
         let programs: Vec<Program> = match coffee {
-            Some((id, _)) => get(token, &format!("/devices/{id}/programs")).unwrap_or_default(),
+            Some((id, _)) => {
+                get_in(token, &format!("/devices/{id}/programs"), "en").unwrap_or_default()
+            }
             None => vec![],
         };
         Ok(Some(Machine {
@@ -893,6 +924,7 @@ fn main() {
             more,
             drinks,
             care,
+            fault,
             brew,
             power,
             other_drinks,
@@ -1055,6 +1087,27 @@ mod tests {
         assert_eq!(c.progress, Some(62)); // 38 min done, 23 left
         assert_eq!(tray_title(&devices, true), "23 min");
         assert_eq!(tray_title(&devices, false), "");
+    }
+
+    #[test]
+    fn running_washer_card_adds_water_and_energy_when_sent() {
+        let mut devices = washer();
+        devices.values_mut().next().unwrap().state.eco_feedback = serde_json::from_str(
+            r#"{"currentWaterConsumption":{"unit":"l","value":12},"currentEnergyConsumption":{"unit":"kWh","value":0.4}}"#,
+        )
+        .unwrap();
+        let c = card_of(&devices);
+        assert_eq!(
+            c.sub.as_deref(),
+            Some("Sportswear · 40 °C · 1200 rpm · so far 12 l · 0.4 kWh")
+        );
+    }
+
+    #[test]
+    fn unreadable_demo_file_is_not_a_login_problem() {
+        let c = demo_error_card("x.json", "No such file");
+        assert!(!c.login && !c.chip.contains("Login") && !c.title.contains("Miele"));
+        assert_eq!(c.sub.as_deref(), Some("x.json: No such file"));
     }
 
     #[test]

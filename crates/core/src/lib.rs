@@ -69,11 +69,54 @@ pub struct State {
     // Washers and dryers; value_raw is null when the programme has no spin speed.
     #[serde(default)]
     pub spinning_speed: Reading,
+    // Tumble dryers: e.g. "Normal"; empty when the programme has none.
+    #[serde(default)]
+    pub drying_step: Reading,
+    // Water and energy used so far by the running programme; null when unsupported.
+    #[serde(default)]
+    pub eco_feedback: Option<EcoFeedback>,
     #[serde(default)]
     pub target_temperature: Vec<Temperature>,
     // Measured temperature per compartment: fridges, freezers and wine units.
     #[serde(default)]
     pub temperature: Vec<Temperature>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EcoFeedback {
+    pub current_water_consumption: Option<Amount>,
+    pub current_energy_consumption: Option<Amount>,
+}
+
+/// A quantity with its unit, e.g. 12 l or 0.4 kWh.
+#[derive(Deserialize)]
+pub struct Amount {
+    pub unit: String,
+    pub value: f64,
+}
+
+/// "12 l · 0.4 kWh"; amounts that are missing or zero are skipped, None if none is left.
+fn amounts(water: &Option<Amount>, energy: &Option<Amount>) -> Option<String> {
+    let parts: Vec<_> = [water, energy]
+        .into_iter()
+        .flatten()
+        .filter(|a| a.value > 0.0)
+        .map(|a| format!("{} {}", a.value, a.unit))
+        .collect();
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
+/// "so far 12 l · 0.4 kWh" while a washer, dryer or dishwasher runs; None when Miele sends
+/// nothing or zeros.
+pub fn eco_line(d: &Device) -> Option<String> {
+    let running = [5, 6].contains(&d.state.status.value_raw);
+    let eco = d.state.eco_feedback.as_ref().filter(|_| running)?;
+    amounts(
+        &eco.current_water_consumption,
+        &eco.current_energy_consumption,
+    )
+    .map(|a| format!("so far {a}"))
 }
 
 /// A temperature setting. `value_raw` is hundredths of °C (4000 = 40 °C); -32768 = not used.
@@ -123,9 +166,50 @@ pub struct Program {
     pub program: String,
 }
 
+/// The languages Miele's 3rd Party API has texts in. Anything else gets English.
+const LANGUAGES: [&str; 8] = ["da", "de", "en", "es", "fr", "it", "nb", "nl"];
+
+/// First two letters of the first set value, if Miele has that language, else "en".
+fn pick_language<'a>(values: impl IntoIterator<Item = &'a str>) -> &'static str {
+    let first = values.into_iter().find(|v| !v.is_empty()).unwrap_or("");
+    LANGUAGES
+        .into_iter()
+        .find(|l| first.get(..2) == Some(l))
+        .unwrap_or("en")
+}
+
+/// Language for Miele's texts: `FREEMIELE_LANG`, else the system language, else English.
+pub fn language() -> &'static str {
+    static LANGUAGE: std::sync::OnceLock<&str> = std::sync::OnceLock::new();
+    LANGUAGE.get_or_init(|| {
+        let var = |k: &str| std::env::var(k).unwrap_or_default();
+        let vars = ["FREEMIELE_LANG", "LC_ALL", "LC_MESSAGES", "LANG"].map(var);
+        // A Finder-launched Mac app has no LANG: ask macOS, e.g. "de_DE".
+        let mac = if vars.iter().all(|v| v.is_empty()) && cfg!(target_os = "macos") {
+            std::process::Command::new("defaults")
+                .args(["read", "-g", "AppleLocale"])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+        pick_language(vars.iter().map(String::as_str).chain([mac.as_str()]))
+    })
+}
+
 pub fn get<T: DeserializeOwned>(token: &str, path: &str) -> Result<T> {
+    get_in(token, path, language())
+}
+
+/// `get` with Miele's texts in a chosen language. Drink lists stay in English ("en"): favourites
+/// and `miele brew <drink>` match drinks by their English name.
+pub fn get_in<T: DeserializeOwned>(token: &str, path: &str, language: &str) -> Result<T> {
     Ok(reqwest::blocking::Client::new()
-        .get(format!("{API}{path}"))
+        .get(Url::parse_with_params(
+            &format!("{API}{path}"),
+            [("language", language)],
+        )?)
         .bearer_auth(token)
         .send()?
         .error_for_status()?
@@ -182,7 +266,7 @@ pub fn dump(token: &str) -> Result<serde_json::Value> {
     use serde_json::{Value, json};
     // A failed part is recorded, not fatal. The reqwest error would carry the URL (and the id).
     let part = |id: &str, what: &str| -> Value {
-        get(token, &format!("/devices/{id}{what}?language=en")).unwrap_or_else(|e| {
+        get_in(token, &format!("/devices/{id}{what}"), "en").unwrap_or_else(|e| {
             let msg = match e.downcast::<reqwest::Error>() {
                 Ok(e) => e.without_url().to_string(),
                 Err(e) => e.to_string(),
@@ -190,7 +274,7 @@ pub fn dump(token: &str) -> Result<serde_json::Value> {
             json!({ "error": msg })
         })
     };
-    let devices: HashMap<String, Value> = get(token, "/devices?language=en")?;
+    let devices: HashMap<String, Value> = get_in(token, "/devices", "en")?;
     // Sorted by model so appliance-1, appliance-2… are the same on every run.
     let mut devices: Vec<_> = devices.iter().collect();
     devices.sort_by_key(|(_, d)| d["ident"]["deviceIdentLabel"]["techType"].to_string());
@@ -470,6 +554,11 @@ pub fn details(d: &Device) -> Option<String> {
             .value_raw
             .filter(|&r| r > 0)
             .map(|r| format!("{r} rpm")),
+        d.state
+            .drying_step
+            .value_localized
+            .clone()
+            .filter(|t| !t.is_empty()),
     ]
     .into_iter()
     .flatten()
@@ -509,6 +598,9 @@ pub fn status_line(d: &Device) -> String {
         if let Some(details) = details(d) {
             line += &format!(" ({details})");
         }
+        if let Some(eco) = eco_line(d) {
+            line += &format!(" · {eco}");
+        }
     }
     if let Some(temps) = compartments(d) {
         line += &format!(" · {temps}");
@@ -534,6 +626,27 @@ pub fn status_line(d: &Device) -> String {
         line += " — needs attention: check the machine's display";
     }
     line
+}
+
+/// Only these report a fault text through `GET /devices/{id}/failureDetails`.
+pub fn has_fault_text(kind: i64) -> bool {
+    WASHERS_AND_DRYERS.contains(&kind) || kind == DISHWASHER
+}
+
+/// Miele's words for a fault, e.g. "Water inlet blocked", from a `failureDetails` reply
+/// (`{"message", "errorNumber"}`, alone or in a list). The number is left out, like every code.
+pub fn fault_line(v: &serde_json::Value) -> Option<String> {
+    let v = v.as_array().and_then(|a| a.first()).unwrap_or(v);
+    let text = v["message"].as_str()?.trim();
+    text.chars()
+        .any(|c| !c.is_ascii_digit() && !c.is_whitespace())
+        .then(|| text.to_string())
+}
+
+/// The fault text for one appliance; None when Miele has none or answers with an error.
+pub fn failure_line(token: &str, id: &str) -> Option<String> {
+    let v: serde_json::Value = get(token, &format!("/devices/{id}/failureDetails")).ok()?;
+    fault_line(&v)
 }
 
 /// "14:30" when an appliance waits for a delayed start; None otherwise.
@@ -638,6 +751,7 @@ fn stream(
             .get(format!("{API}/devices/all/events"))
             .bearer_auth(token)
             .header("Accept", "text/event-stream")
+            .header("Accept-Language", language())
             .send()?
             .error_for_status()?)
     };
@@ -713,7 +827,7 @@ pub struct FillingLevels {
 }
 
 /// One finished run, from `GET /devices/{id}/lastUsedPrograms` (a JSON array). The consumption
-/// fields are always null on our machines, so they are not read.
+/// fields are null on washer-dryers like the WTR860, so then nothing is shown.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LastRun {
@@ -723,6 +837,10 @@ pub struct LastRun {
     pub start_at: Option<String>,
     #[serde(default)]
     pub end_at: Option<String>,
+    #[serde(default)]
+    pub water_consumption: Option<Amount>,
+    #[serde(default)]
+    pub energy_consumption: Option<Amount>,
 }
 
 /// "Mon 2 Mar 18:00 · Rinse out lint · 8 min": start in local time at `offset` seconds from UTC.
@@ -754,6 +872,9 @@ pub fn history_line(r: &LastRun, offset: i64) -> String {
             0..60 => format!("{mins} min"),
             _ => format!("{} h {:02} min", mins / 60, mins % 60),
         });
+    }
+    if let Some(a) = amounts(&r.water_consumption, &r.energy_consumption) {
+        parts.push(format!("{a} (Miele's estimate)"));
     }
     parts.join(" · ")
 }
@@ -1332,6 +1453,9 @@ mod tests {
         .unwrap();
         let d = devices.get_mut("000000000024").unwrap();
         assert_eq!(details(d).as_deref(), Some("40 °C · 1200 rpm"));
+        d.state.drying_step.value_localized = Some("Normal".into());
+        assert_eq!(details(d).as_deref(), Some("40 °C · 1200 rpm · Normal"));
+        d.state.drying_step.value_localized = None;
         d.state.target_temperature[0].value_raw = -32768;
         assert_eq!(details(d).as_deref(), Some("1200 rpm"));
         d.state.spinning_speed.value_raw = None;
@@ -1339,6 +1463,39 @@ mod tests {
         let coffee: Devices =
             serde_json::from_str(include_str!("../../../fixtures/devices.sample.json")).unwrap();
         assert_eq!(details(&coffee["000123456789"]), None);
+    }
+
+    #[test]
+    fn eco_line_only_when_running_and_non_zero() {
+        let mut devices: Devices = serde_json::from_str(include_str!(
+            "../../../fixtures/devices.washer-running.sample.json"
+        ))
+        .unwrap();
+        let d = devices.get_mut("000000000024").unwrap();
+        assert_eq!(eco_line(d), None);
+        d.state.eco_feedback = serde_json::from_str(
+            r#"{"currentWaterConsumption":{"unit":"l","value":12},"currentEnergyConsumption":{"unit":"kWh","value":0.4}}"#,
+        )
+        .unwrap();
+        assert_eq!(eco_line(d).as_deref(), Some("so far 12 l · 0.4 kWh"));
+        assert!(status_line(d).contains("(40 °C · 1200 rpm) · so far 12 l · 0.4 kWh"));
+        d.state.eco_feedback = serde_json::from_str(
+            r#"{"currentWaterConsumption":{"unit":"l","value":0},"currentEnergyConsumption":null}"#,
+        )
+        .unwrap();
+        assert_eq!(eco_line(d), None);
+    }
+
+    #[test]
+    fn history_line_shows_consumption_when_sent() {
+        let r: LastRun = serde_json::from_str(
+            r#"{"ProgramID":{"value_raw":31,"value_localized":"Automatic plus"},"waterConsumption":{"unit":"l","value":46.0},"energyConsumption":{"unit":"kWh","value":0.29}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            history_line(&r, 0),
+            "Automatic plus · 46 l · 0.29 kWh (Miele's estimate)"
+        );
     }
 
     #[test]
@@ -1470,6 +1627,30 @@ mod tests {
     }
 
     #[test]
+    fn reads_fault_text_and_ignores_the_rest() {
+        let say = |j: &str| fault_line(&serde_json::from_str(j).unwrap());
+        assert_eq!(
+            say(r#"{"message":"Error water inlet","errorNumber":10}"#).as_deref(),
+            Some("Error water inlet")
+        );
+        assert_eq!(
+            say(r#"[{"errorNumber":10,"message":"Error water inlet"}]"#).as_deref(),
+            Some("Error water inlet")
+        );
+        // A number alone, empty or odd replies: show nothing.
+        for j in [
+            r#"{"errorNumber":11}"#,
+            r#"{"message":"11"}"#,
+            "{}",
+            "[]",
+            "null",
+            r#""x""#,
+        ] {
+            assert_eq!(say(j), None, "{j}");
+        }
+    }
+
+    #[test]
     fn chooses_device() {
         let sample = || -> Device {
             let mut m: Devices =
@@ -1526,6 +1707,15 @@ mod tests {
             code_from_request("GET /?state=abc&error=access_denied HTTP/1.1", "abc"),
             None
         );
+    }
+
+    #[test]
+    fn language_comes_from_the_first_set_value_and_must_be_supported() {
+        assert_eq!(pick_language(["", "de_DE.UTF-8", "fr"]), "de");
+        assert_eq!(pick_language(["nb_NO", "de"]), "nb");
+        assert_eq!(pick_language(["pt_BR", "de"]), "en");
+        assert_eq!(pick_language(["C"]), "en");
+        assert_eq!(pick_language(["", ""]), "en");
     }
 
     #[test]

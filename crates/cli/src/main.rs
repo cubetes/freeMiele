@@ -4,7 +4,7 @@ use freemiele::dataact::{self, Appliance, Consumption, Refused, Run};
 use freemiele::{
     Actions, CARE_SCHEDULE, COFFEE_MACHINE, DISHWASHER, Device, Devices, FillingLevels, LastRun,
     Outcome, Program, Result, Session, WASHERS_AND_DRYERS, care_line, choose, dishwasher_line, get,
-    history_line, name, twin_dos_line, utc_offset,
+    get_in, history_line, name, twin_dos_line, utc_offset,
 };
 use std::io::{IsTerminal, Write};
 use std::sync::atomic::AtomicBool;
@@ -86,7 +86,8 @@ fn run(cmd: Cmd) -> Result<()> {
         Cmd::Login => login(),
         Cmd::Logout => logout(),
         Cmd::Status { json } => {
-            let devices: Devices = get(&token()?, "/devices")?;
+            let token = token()?;
+            let devices: Devices = get(&token, "/devices")?;
             if json {
                 println!("{}", status_json(&devices));
                 return Ok(());
@@ -95,9 +96,17 @@ fn run(cmd: Cmd) -> Result<()> {
                 println!("No appliances on this Miele account.");
             }
             let color = std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
-            devices
-                .values()
-                .for_each(|d| println!("{}", colored_status(d, color)));
+            for (id, d) in &devices {
+                let fault = (d.state.signal_failure
+                    && freemiele::has_fault_text(d.ident.kind.value_raw))
+                .then(|| freemiele::failure_line(&token, id))
+                .flatten();
+                let line = colored_status(d, color);
+                match fault {
+                    Some(text) => println!("{line}: {text}"),
+                    None => println!("{line}"),
+                }
+            }
             Ok(())
         }
         Cmd::Completions { shell } => {
@@ -369,7 +378,7 @@ fn brew(device: Option<&str>, drink: &str) -> Result<()> {
     let mut candidates = Vec::new();
     let mut menus = std::collections::HashMap::new();
     for (id, d) in &devices {
-        let programs: Vec<Program> = get(&token, &format!("/devices/{id}/programs"))?;
+        let programs: Vec<Program> = get_in(&token, &format!("/devices/{id}/programs"), "en")?;
         if !programs.is_empty() {
             candidates.push((id.as_str(), d));
             menus.insert(id.as_str(), programs);
