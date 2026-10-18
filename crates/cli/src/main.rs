@@ -4,7 +4,7 @@ use freemiele::dataact::{self, Appliance, Consumption, Refused, Run};
 use freemiele::{
     Actions, CARE_SCHEDULE, COFFEE_MACHINE, DISHWASHER, Device, Devices, FillingLevels, LastRun,
     Outcome, Program, Result, Session, WASHERS_AND_DRYERS, care_line, choose, dishwasher_line, get,
-    history_line, name, twin_dos_line, utc_offset,
+    get_in, history_line, name, twin_dos_line, utc_offset,
 };
 use std::io::{IsTerminal, Write};
 use std::sync::atomic::AtomicBool;
@@ -378,7 +378,7 @@ fn brew(device: Option<&str>, drink: &str) -> Result<()> {
     let mut candidates = Vec::new();
     let mut menus = std::collections::HashMap::new();
     for (id, d) in &devices {
-        let programs: Vec<Program> = get(&token, &format!("/devices/{id}/programs"))?;
+        let programs: Vec<Program> = get_in(&token, &format!("/devices/{id}/programs"), "en")?;
         if !programs.is_empty() {
             candidates.push((id.as_str(), d));
             menus.insert(id.as_str(), programs);

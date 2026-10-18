@@ -7,7 +7,7 @@ mod settings;
 use freemiele::{
     COFFEE_MACHINE, COOLERS, DISHWASHER, Device, Devices, END, FillingLevels, NOT_LOGGED_IN,
     Outcome, Program, Rejected, Session, TUMBLE_DRYER, WASHERS_AND_DRYERS, activity, compartments,
-    find_program, get, start_at,
+    find_program, get, get_in, start_at,
 };
 use serde::{Deserialize, Serialize};
 use settings::Settings;
@@ -263,7 +263,7 @@ fn card(id: &str, d: &Device) -> Card {
     let dries = kind == TUMBLE_DRYER
         || s.program_phase
             .value_raw
-            .is_some_and(|p| p == 280 || (513..=539).contains(&p));
+            .is_some_and(|p| matches!(p, 280 | 514..=518 | 520 | 523 | 524 | 528 | 529 | 538));
     let icon = match status {
         NOT_CONNECTED => "offline",
         1 => "power",
@@ -540,7 +540,8 @@ async fn miele<T: Send + 'static>(
 async fn drinks(app: AppHandle, device_id: String) -> Result<Drinks, String> {
     let favourites = settings_now(&app).favourites;
     miele(move |token| {
-        let programs: Vec<Program> = get(token, &format!("/devices/{device_id}/programs"))?;
+        let programs: Vec<Program> =
+            get_in(token, &format!("/devices/{device_id}/programs"), "en")?;
         Ok(drinks_of(&programs, &favourites))
     })
     .await
@@ -749,7 +750,9 @@ async fn machine() -> Result<Option<Machine>, String> {
             .into_iter()
             .find(|(_, d)| d.ident.kind.value_raw == COFFEE_MACHINE);
         let programs: Vec<Program> = match coffee {
-            Some((id, _)) => get(token, &format!("/devices/{id}/programs")).unwrap_or_default(),
+            Some((id, _)) => {
+                get_in(token, &format!("/devices/{id}/programs"), "en").unwrap_or_default()
+            }
             None => vec![],
         };
         Ok(Some(Machine {

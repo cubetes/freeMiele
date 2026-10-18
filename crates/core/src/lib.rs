@@ -202,8 +202,9 @@ pub fn get<T: DeserializeOwned>(token: &str, path: &str) -> Result<T> {
     get_in(token, path, language())
 }
 
-/// `get` with Miele's texts in a chosen language.
-fn get_in<T: DeserializeOwned>(token: &str, path: &str, language: &str) -> Result<T> {
+/// `get` with Miele's texts in a chosen language. Drink lists stay in English ("en"): favourites
+/// and `miele brew <drink>` match drinks by their English name.
+pub fn get_in<T: DeserializeOwned>(token: &str, path: &str, language: &str) -> Result<T> {
     Ok(reqwest::blocking::Client::new()
         .get(Url::parse_with_params(
             &format!("{API}{path}"),
@@ -632,26 +633,14 @@ pub fn has_fault_text(kind: i64) -> bool {
     WASHERS_AND_DRYERS.contains(&kind) || kind == DISHWASHER
 }
 
-/// Miele's words for a fault, e.g. "Water inlet blocked (11)", from a `failureDetails` reply.
-/// The reply's shape is not documented, so this reads the first text it finds. A number is shown
-/// only next to text, and a "text" that is only digits counts as no text.
+/// Miele's words for a fault, e.g. "Water inlet blocked", from a `failureDetails` reply
+/// (`{"message", "errorNumber"}`, alone or in a list). The number is left out, like every code.
 pub fn fault_line(v: &serde_json::Value) -> Option<String> {
     let v = v.as_array().and_then(|a| a.first()).unwrap_or(v);
-    let text = ["text", "failureText", "description", "message", "failure"]
-        .iter()
-        .find_map(|k| {
-            let s = &v[*k];
-            s.as_str().or_else(|| s["value_localized"].as_str())
-        })
-        .map(str::trim)
-        .filter(|t| t.chars().any(|c| !c.is_ascii_digit() && !c.is_whitespace()))?;
-    let number = ["number", "failureNumber", "code", "failureCode"]
-        .iter()
-        .find_map(|k| match &v[*k] {
-            n if n.is_number() => Some(n.to_string()),
-            n => n.as_str().filter(|s| !s.is_empty()).map(String::from),
-        });
-    Some(number.map_or(text.to_string(), |n| format!("{text} ({n})")))
+    let text = v["message"].as_str()?.trim();
+    text.chars()
+        .any(|c| !c.is_ascii_digit() && !c.is_whitespace())
+        .then(|| text.to_string())
 }
 
 /// The fault text for one appliance; None when Miele has none or answers with an error.
@@ -1641,17 +1630,17 @@ mod tests {
     fn reads_fault_text_and_ignores_the_rest() {
         let say = |j: &str| fault_line(&serde_json::from_str(j).unwrap());
         assert_eq!(
-            say(r#"{"text":"Water inlet blocked","number":11}"#).as_deref(),
-            Some("Water inlet blocked (11)")
+            say(r#"{"message":"Error water inlet","errorNumber":10}"#).as_deref(),
+            Some("Error water inlet")
         );
         assert_eq!(
-            say(r#"[{"failureText":{"value_raw":1,"value_localized":"Door open"}}]"#).as_deref(),
-            Some("Door open")
+            say(r#"[{"errorNumber":10,"message":"Error water inlet"}]"#).as_deref(),
+            Some("Error water inlet")
         );
         // A number alone, empty or odd replies: show nothing.
         for j in [
-            r#"{"number":11}"#,
-            r#"{"text":"11"}"#,
+            r#"{"errorNumber":11}"#,
+            r#"{"message":"11"}"#,
             "{}",
             "[]",
             "null",
